@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from html.parser import HTMLParser
 from typing import Any
 
@@ -28,6 +29,11 @@ class DCInsideHTMLParser(HTMLParser):
         self.current_row_subject: list[str] = []
         self.subject_depth: int | None = None
         self._list_rows: list[dict[str, str]] = []
+        self.author_name = ""
+        self.author_type = "unknown"
+        self._author_active = False
+        self._author_parts: list[str] = []
+        self._author_attrs: dict[str, str] = {}
 
     def _has_class(self, name: str) -> bool:
         return any(name in classes for _, classes in self.stack)
@@ -60,6 +66,13 @@ class DCInsideHTMLParser(HTMLParser):
         if self._has_class("title_subject"):
             self._append(self.title_subject_parts, "\n" if tag == "br" else "")
 
+        if not self.author_name and self._has_class("w_top_left") and (
+            "nickname" in classes or attributes.get("user_name") or attributes.get("user_id")
+        ):
+            self._author_active = True
+            self._author_parts = []
+            self._author_attrs = {key: value or "" for key, value in attributes.items()}
+
         if self.current_row is not None and tag == "a" and ("gall_tit" in classes or self._has_class("gall_tit")):
             self.current_row["href"] = attributes.get("href") or ""
 
@@ -73,6 +86,11 @@ class DCInsideHTMLParser(HTMLParser):
             self.json_ld_scripts.append("".join(self.json_ld_parts))
             self.json_ld_parts = []
             self.json_ld_active = False
+
+        if self._author_active and tag in {"span", "a"}:
+            self.author_name = normalize_space("".join(self._author_parts))
+            self.author_type = infer_author_type(self.author_name, self._author_attrs)
+            self._author_active = False
 
         if tag == "td" and self.subject_depth == len(self.stack) and self.current_row is not None:
             self.current_row["subject"] = "".join(self.current_row_subject)
@@ -101,6 +119,8 @@ class DCInsideHTMLParser(HTMLParser):
             self._append(self.title_head_parts, data)
         if self._has_class("title_subject"):
             self._append(self.title_subject_parts, data)
+        if self._author_active:
+            self._author_parts.append(data)
         if self.subject_depth is not None and self.current_row is not None:
             self.current_row_subject.append(data)
 
@@ -148,4 +168,19 @@ def parse_html(html: str, url: str) -> tuple[dict[str, Any], DCInsideHTMLParser]
         "body": body,
         "url": str(metadata.get("url") or url),
         "posted_at": str(metadata.get("datePublished") or ""),
+        "author_name": parser.author_name,
+        "author_type": parser.author_type,
     }, parser
+
+
+def infer_author_type(name: str, attrs: dict[str, str] | None = None) -> str:
+    """Classify the public author marker without storing network identifiers."""
+    attrs = attrs or {}
+    public_id = attrs.get("user_id") or attrs.get("data-uid") or attrs.get("data-user-id")
+    if public_id and not re.fullmatch(r"(?:\d{1,3}\.){1,3}\d{1,3}", public_id):
+        return "registered"
+    if re.search(r"\b(?:ㅇㅇ|유동)\b", name) or re.search(r"\([^)]*\d+\.[^)]*\)", name):
+        return "guest"
+    if name:
+        return "registered"
+    return "unknown"

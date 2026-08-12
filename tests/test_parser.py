@@ -1,9 +1,30 @@
 import unittest
 
+from kaitori_collector.html import parse_html
 from kaitori_collector.parser import build_list_url, extract_gallery, extract_post, parse_sale_line
 
 
 class ParserTests(unittest.TestCase):
+    def test_extract_post_keeps_public_author_marker(self):
+        html = '''
+        <div class="w_top_left"><dl><dt>글쓴이</dt><dd><span class="nickname" user_name="카드상인" user_id="carddealer">카드상인</span></dd></dl></div>
+        <span class="title_subject">판매 카드</span><div class="write_div">블루아이즈 3.5</div>
+        '''
+
+        document, _ = parse_html(html, "https://example.test/post/1")
+
+        self.assertEqual(document["author_name"], "카드상인")
+        self.assertEqual(document["author_type"], "registered")
+
+    def test_guest_author_is_classified_without_preserving_ip(self):
+        html = '''
+        <div class="w_top_left"><dl><dt>글쓴이</dt><dd><span class="nickname">ㅇㅇ(39.7)</span></dd></dl></div>
+        <span class="title_subject">판매 카드</span><div class="write_div">블루아이즈 3.5</div>
+        '''
+
+        document, _ = parse_html(html, "https://example.test/post/1")
+
+        self.assertEqual(document["author_type"], "guest")
     def test_build_list_url_uses_configured_gallery_url(self):
         url = build_list_url(
             "tcggame",

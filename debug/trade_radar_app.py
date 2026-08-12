@@ -288,14 +288,14 @@ class TradeRadarApp:
         dialog.title(f"{item['values'][0]} · 매물과 수요")
         dialog.geometry("1050x520")
         ttk.Label(dialog, text=f"{item['values'][0]} · {game_name(game_id)}", font=("Segoe UI", 15, "bold")).pack(anchor="w", padx=16, pady=14)
-        tree = ttk.Treeview(dialog, columns=("type", "price", "quantity", "confidence", "date", "title", "url"), show="headings")
-        labels = {"type": "유형", "price": "가격", "quantity": "수량", "confidence": "신뢰도", "date": "등록", "title": "원문 제목", "url": "원문"}
+        tree = ttk.Treeview(dialog, columns=("type", "price", "quantity", "author", "author_type", "confidence", "date", "title", "url"), show="headings")
+        labels = {"type": "유형", "price": "가격", "quantity": "수량", "author": "작성자", "author_type": "작성자 유형", "confidence": "신뢰도", "date": "등록", "title": "원문 제목", "url": "원문"}
         for col in tree["columns"]:
             tree.heading(col, text=labels[col])
             tree.column(col, width=100 if col != "title" else 270, anchor="w" if col in {"title", "url"} else "center")
         tree.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         for row in rows:
-            tree.insert("", "end", values=(_type_label(row.get("listing_type")), money(row.get("price_krw")), row.get("quantity", 1), f"{float(row.get('intent_confidence') or 0):.0%}", row.get("posted_at", ""), row.get("post_title", ""), row.get("post_url", "")))
+            tree.insert("", "end", values=(_type_label(row.get("listing_type")), money(row.get("price_krw")), row.get("quantity", 1), row.get("author_name", "") or "-", _author_type_label(row.get("author_type")), f"{float(row.get('intent_confidence') or 0):.0%}", row.get("posted_at", ""), row.get("post_title", ""), row.get("post_url", "")))
 
     def _export_cards(self) -> None:
         filters = self._market_filters()
@@ -374,7 +374,7 @@ class TradeRadarApp:
         if job:
             self._refresh_logs()
             counts = job["counts"]
-            self.collect_metric.configure(text=f"글 {counts.get('sources', 0)} · 행 {counts.get('rows', 0)} · 구매 {counts.get('buy', 0)}")
+            self.collect_metric.configure(text=f"글 {counts.get('sources', 0)} · 행 {counts.get('rows', 0)} · 구매 {counts.get('buy', 0)} · 댓글 {counts.get('comments', 0)}")
             if job["state"] in {"completed", "failed"}:
                 self.running = False
                 self.collect_button.configure(state="normal")
@@ -422,6 +422,10 @@ class TradeRadarApp:
 
 def _type_label(value: str) -> str:
     return {"sell": "판매", "buy": "구매", "trade": "교환", "unknown": "미확인"}.get(value or "unknown", "미확인")
+
+
+def _author_type_label(value: str) -> str:
+    return {"guest": "유동", "registered": "고닉", "unknown": "미확인"}.get(value or "unknown", "미확인")
 
 
 def _status_label(value: str) -> str:

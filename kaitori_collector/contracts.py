@@ -11,6 +11,7 @@ RowStatus = Literal["raw", "parsed", "needs_review", "approved", "rejected", "ex
 JobState = Literal["queued", "running", "completed", "failed"]
 ListingType = Literal["sell", "buy", "trade", "unknown"]
 PriceType = Literal["asking", "wanted", "unknown"]
+AuthorType = Literal["guest", "registered", "unknown"]
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,20 @@ class ExtractedRow:
     listing_type: ListingType = "unknown"
     intent_confidence: float = 0.0
     price_type: PriceType = "unknown"
+    author_name: str = ""
+    author_type: AuthorType = "unknown"
+
+
+@dataclass(frozen=True)
+class CommentRecord:
+    gallery_id: str
+    post_url: str
+    comment_id: str
+    parent_id: str
+    author_name: str
+    author_type: AuthorType
+    body: str
+    posted_at: str
 
 
 @dataclass(frozen=True)

@@ -6,23 +6,26 @@ import threading
 import time
 from datetime import date
 from typing import Callable, Any
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from . import __version__
+from .comments import parse_comments
 from .contracts import JobRequest, ReviewAction, utc_now
 from .html import DCInsideHTMLParser, parse_html, normalize_space
 from .observability import inspect_source_response, is_retryable_error, retry_delay
-from .parser import build_list_url, extract_post, fetch_text
+from .parser import build_list_url, extract_comment_token, extract_post, fetch_comment_text, fetch_text
 from .storage import Repository
 
 
 Fetcher = Callable[[str], str]
+CommentFetcher = Callable[[str, str, str, str, int], str]
 
 
 class JobService:
-    def __init__(self, repository: Repository, fetcher: Fetcher | None = None, sleep: Callable[[float], None] = time.sleep, catalog: list[Any] | None = None) -> None:
+    def __init__(self, repository: Repository, fetcher: Fetcher | None = None, sleep: Callable[[float], None] = time.sleep, catalog: list[Any] | None = None, comment_fetcher: CommentFetcher | None = None) -> None:
         self.repository = repository
         self.fetcher = fetcher or fetch_text
+        self.comment_fetcher = comment_fetcher or (lambda post_url, gallery_id, post_number, ci_t, page: fetch_comment_text(post_url, gallery_id, post_number, ci_t, page))
         self.sleep = sleep
         self.catalog = catalog or []
         self._threads: dict[str, threading.Thread] = {}
@@ -129,12 +132,15 @@ class JobService:
                         "post_url": document["url"],
                         "title": document["title"],
                         "posted_at": document["posted_at"],
+                        "author_name": document.get("author_name", ""),
+                        "author_type": document.get("author_type", "unknown"),
                         "raw_html": post_html,
                         "keep_raw": request.keep_raw,
                     })
                     self.repository.attach_source_to_job(job_id, source_id)
+                    comments_inserted = self._collect_comments(job_id, post_url, request.gallery_id, post_html, source_id, request)
                     inserted_rows = self.repository.insert_rows(job_id, source_id, extracted_rows)
-                    self._log(job_id, step="store", message=f"원문·결과 저장 완료 · 신규 행 {inserted_rows}개", details={"url": post_url, "rows": len(extracted_rows), "inserted": inserted_rows})
+                    self._log(job_id, step="store", message=f"원문·결과 저장 완료 · 신규 행 {inserted_rows}개 / 댓글 {comments_inserted}개", details={"url": post_url, "rows": len(extracted_rows), "inserted": inserted_rows, "comments": comments_inserted})
                     if self.catalog:
                         from .matcher import match_card
 
@@ -208,6 +214,11 @@ class JobService:
             raise KeyError(f"job not found: {job_id}")
         return self.repository.list_job_logs(job_id, limit=limit)
 
+    def get_comments(self, job_id: str, *, limit: int = 2000) -> list[dict[str, Any]]:
+        if self.repository.get_job(job_id) is None:
+            raise KeyError(f"job not found: {job_id}")
+        return self.repository.list_comments(job_id=job_id)[:max(1, min(limit, 5000))]
+
     def get_market_listings(self, **filters: Any) -> list[dict[str, Any]]:
         return self.repository.list_market_listings(**filters)
 
@@ -275,6 +286,42 @@ class JobService:
                 self._log(job_id, level="warning", step=step, message=f"요청 재시도 대기 · {attempt + 1}/{request.max_retries}", details={"url": url, "error_type": type(exc).__name__, "delay_seconds": wait})
                 self.sleep(wait)
         raise RuntimeError("unreachable fetch retry state")
+
+    def _collect_comments(self, job_id: str, post_url: str, gallery_id: str, post_html: str, source_id: str, request: JobRequest) -> int:
+        ci_t = extract_comment_token(post_html)
+        post_number = parse_qs(urlparse(post_url).query).get("no", [""])[0]
+        if not ci_t or not post_number:
+            self._log(job_id, level="warning", step="comments", message="댓글 조회 토큰 또는 게시글 번호 없음", details={"url": post_url})
+            return 0
+        total_inserted = 0
+        for page in range(1, 26):
+            try:
+                html = self._fetch_comment_with_retry(job_id, post_url, gallery_id, post_number, ci_t, page, request)
+            except Exception as exc:
+                self._log(job_id, level="warning", step="comments", message="댓글 조회 실패 · 게시글 수집은 계속", details={"url": post_url, "page": page, "error_type": type(exc).__name__, "error": str(exc)[:200]})
+                break
+            if not html.strip():
+                self._log(job_id, level="warning", step="comments", message="댓글 응답이 비어 있음", details={"url": post_url, "page": page})
+                break
+            comments = parse_comments(html, post_url, gallery_id)
+            inserted = self.repository.insert_comments(source_id, comments)
+            total_inserted += inserted
+            self._log(job_id, step="comments", message=f"댓글 파싱 완료 · {len(comments)}개 / 신규 {inserted}개", details={"url": post_url, "page": page, "comments": len(comments), "inserted": inserted})
+            if len(comments) < 40:
+                break
+        return total_inserted
+
+    def _fetch_comment_with_retry(self, job_id: str, post_url: str, gallery_id: str, post_number: str, ci_t: str, page: int, request: JobRequest) -> str:
+        for attempt in range(request.max_retries + 1):
+            try:
+                return self.comment_fetcher(post_url, gallery_id, post_number, ci_t, page)
+            except Exception as exc:
+                if attempt >= request.max_retries or not is_retryable_error(exc):
+                    raise
+                wait = retry_delay(attempt)
+                self._log(job_id, level="warning", step="comments", message=f"댓글 요청 재시도 대기 · {attempt + 1}/{request.max_retries}", details={"url": post_url, "page": page, "error_type": type(exc).__name__, "delay_seconds": wait})
+                self.sleep(wait)
+        raise RuntimeError("unreachable comment retry state")
 
 
 def _request_from_job(job: dict[str, Any]) -> JobRequest:

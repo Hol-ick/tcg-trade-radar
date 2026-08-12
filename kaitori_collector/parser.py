@@ -34,7 +34,7 @@ MULTI_CARD_RE = re.compile(r"[,/+]|&|\s(?:및|외)\s")
 AMBIGUOUS_QUANTITY_RE = re.compile(r"여러\s*장|다수|수량\s*(?:불명|미상)|전부")
 CSV_FIELDS = [
     "gallery_id", "post_title", "post_url", "posted_at", "card_name", "rarity",
-    "raw_price", "price_krw", "price_unit", "quantity", "shipping_included",
+    "raw_price", "price_krw", "price_unit", "quantity", "shipping_included", "author_name", "author_type",
     "shipping_price_krw", "review_status", "review_reason", "raw_line",
 ]
 
@@ -45,6 +45,39 @@ def fetch_text(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_USER_A
         payload = response.read()
         encoding = response.headers.get_content_charset() or "utf-8"
     return payload.decode(encoding, errors="replace")
+
+
+def fetch_comment_text(
+    post_url: str,
+    gallery_id: str,
+    post_number: str,
+    ci_t: str,
+    page: int = 1,
+    timeout: float = 15.0,
+    user_agent: str = DEFAULT_USER_AGENT,
+) -> str:
+    """Read one public comment page through DCInside's read-only endpoint."""
+    payload = urlencode({"ci_t": ci_t, "id": gallery_id, "no": post_number, "comment_page": str(page)}).encode()
+    request = Request(
+        "https://gall.dcinside.com/comment/view",
+        data=payload,
+        headers={
+            "User-Agent": user_agent,
+            "Accept": "text/html",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": post_url,
+        },
+    )
+    with urlopen(request, timeout=timeout) as response:
+        body = response.read()
+        encoding = response.headers.get_content_charset() or "utf-8"
+    return body.decode(encoding, errors="replace")
+
+
+def extract_comment_token(html: str) -> str:
+    match = re.search(r'<input[^>]+name=["\']ci_t["\'][^>]+value=["\']([^"\']+)', html, re.I)
+    return match.group(1) if match else ""
 
 
 def infer_default_shipping(body: str) -> bool | None:
@@ -164,6 +197,8 @@ def extract_post(html: str, url: str, gallery_id: str, subject: str = "") -> lis
             listing_type=intent.listing_type,
             intent_confidence=intent.confidence,
             price_type=intent.price_type,
+            author_name=document.get("author_name", ""),
+            author_type=document.get("author_type", "unknown"),
             **parsed,
         ))
     if not rows and intent.listing_type == "buy":
@@ -188,6 +223,8 @@ def extract_post(html: str, url: str, gallery_id: str, subject: str = "") -> lis
                 listing_type="buy",
                 intent_confidence=intent.confidence,
                 price_type="wanted",
+                author_name=document.get("author_name", ""),
+                author_type=document.get("author_type", "unknown"),
             ))
     if not rows and body:
         print(f"warning: no price line parsed from {document['url']}; review image-only post", file=sys.stderr)

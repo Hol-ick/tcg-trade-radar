@@ -77,6 +77,9 @@ class WorkerApplication:
         if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "logs" and method == "GET":
             limit = int(query.get("limit", ["500"])[0])
             return ApiResponse(200, {"job_id": parts[1], "logs": self.service.get_logs(parts[1], limit=limit)})
+        if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "comments" and method == "GET":
+            limit = int(query.get("limit", ["2000"])[0])
+            return ApiResponse(200, {"job_id": parts[1], "comments": self.service.get_comments(parts[1], limit=limit)})
         if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "results" and method == "GET":
             approved_only = query.get("approved_only", ["false"])[0].lower() == "true"
             return ApiResponse(200, {"job_id": parts[1], "rows": self.service.get_results(parts[1], approved_only=approved_only)})

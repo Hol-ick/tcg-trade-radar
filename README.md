@@ -27,6 +27,8 @@ python debug/kaitori_app.py
 - 판매/거래 탭 제목 매칭
 - 판매·구매·교환 의도 분류 및 충돌 시 검토 대기
 - 카드명, 가격, 수량, 배송비 포함 여부 추출
+- 공개 작성자 닉네임과 유동·고닉 표기 수집
+- 게시글 댓글의 공개 닉네임·유형·본문·작성시각 수집
 - 카드별 판매 매물·구매글 수·판매가 중앙값·수요 점수
 - 보유 카드 목록을 입력한 구매 수요 탐색
 - 일별 수요 스냅샷과 게임별 거래 동향
@@ -58,6 +60,16 @@ python debug/probe_galleries.py --gallery tcggame --gallery onepiececardgame --g
 ```
 
 이 점검은 응답이 비었거나 HTML 구조가 바뀐 경우를 `게시글 없음`으로 오인하지 않도록 상태를 구분해 JSON으로 출력합니다.
+
+## 유희왕 샘플 수집
+
+유희왕 갤러리의 최근 거래 글을 최대 10개까지 읽기 전용으로 점검하려면 다음을 실행합니다.
+
+```powershell
+python debug/run_yugioh_sample.py --max-posts 10
+```
+
+결과 JSON에는 게시글 작성자, 유동·고닉 유형, 댓글, 단계별 로그가 함께 포함됩니다. 댓글은 글 조회 응답과 분리된 공개 댓글 응답에서 읽습니다.
 
 ## 개발 확인
 
@@ -92,3 +104,4 @@ migrations/         SQLite 스키마
 - `GET /market/cards`: 카드별 판매·구매 요약
 - `GET /market/snapshots`: 일별 동향 스냅샷
 - `POST /market/snapshots`: 현재 수집 데이터로 스냅샷 생성
+- `GET /jobs/{id}/comments`: 작업에 포함된 댓글 목록

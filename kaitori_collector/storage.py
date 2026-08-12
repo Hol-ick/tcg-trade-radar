@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
-from .contracts import ExtractedRow, JobRequest, ReviewAction, to_public_row, utc_now
+from .contracts import CommentRecord, ExtractedRow, JobRequest, ReviewAction, to_public_row, utc_now
 
 
 SCHEMA_SQL = """
@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS kaitori_sources (
   post_url TEXT NOT NULL,
   title TEXT NOT NULL DEFAULT '',
   posted_at TEXT NOT NULL DEFAULT '',
+  author_name TEXT NOT NULL DEFAULT '',
+  author_type TEXT NOT NULL DEFAULT 'unknown',
   raw_html TEXT,
   fetched_at TEXT NOT NULL,
   content_hash TEXT NOT NULL,
@@ -115,10 +117,26 @@ CREATE TABLE IF NOT EXISTS kaitori_job_logs (
   details TEXT NOT NULL DEFAULT '{}'
 );
 
+CREATE TABLE IF NOT EXISTS kaitori_comments (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL REFERENCES kaitori_sources(id),
+  gallery_id TEXT NOT NULL,
+  post_url TEXT NOT NULL,
+  comment_id TEXT NOT NULL DEFAULT '',
+  parent_id TEXT NOT NULL DEFAULT '',
+  author_name TEXT NOT NULL DEFAULT '',
+  author_type TEXT NOT NULL DEFAULT 'unknown',
+  body TEXT NOT NULL DEFAULT '',
+  posted_at TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE (source_id, comment_id, body)
+);
+
 CREATE INDEX IF NOT EXISTS kaitori_rows_job_status_idx ON kaitori_rows(job_id, status);
 CREATE INDEX IF NOT EXISTS kaitori_reviews_row_idx ON kaitori_reviews(row_id, id);
 CREATE INDEX IF NOT EXISTS kaitori_job_rows_status_idx ON kaitori_job_rows(job_id, row_id);
 CREATE INDEX IF NOT EXISTS kaitori_job_logs_job_idx ON kaitori_job_logs(job_id, id);
+CREATE INDEX IF NOT EXISTS kaitori_comments_source_idx ON kaitori_comments(source_id, id);
 
 CREATE TABLE IF NOT EXISTS kaitori_demand_snapshots (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,6 +189,10 @@ class Repository:
         source_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(kaitori_sources)").fetchall()}
         if "source_status" not in source_columns:
             self.connection.execute("ALTER TABLE kaitori_sources ADD COLUMN source_status TEXT NOT NULL DEFAULT 'active'")
+        if "author_name" not in source_columns:
+            self.connection.execute("ALTER TABLE kaitori_sources ADD COLUMN author_name TEXT NOT NULL DEFAULT ''")
+        if "author_type" not in source_columns:
+            self.connection.execute("ALTER TABLE kaitori_sources ADD COLUMN author_type TEXT NOT NULL DEFAULT 'unknown'")
 
     def close(self) -> None:
         self.connection.close()
@@ -287,6 +309,8 @@ class Repository:
             post_url,
             str(source.get("title") or ""),
             str(source.get("posted_at") or ""),
+            str(source.get("author_name") or ""),
+            str(source.get("author_type") or "unknown"),
             raw_html if source.get("keep_raw", True) else None,
             str(source.get("fetched_at") or utc_now()),
             content_hash,
@@ -294,12 +318,48 @@ class Repository:
         )
         cursor = self.connection.execute(
             """INSERT OR IGNORE INTO kaitori_sources
-            (id, gallery_id, post_id, post_url, title, posted_at, raw_html, fetched_at, content_hash, source_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, gallery_id, post_id, post_url, title, posted_at, author_name, author_type, raw_html, fetched_at, content_hash, source_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             values,
         )
         self.connection.commit()
         return source_id, cursor.rowcount == 1
+
+    def insert_comments(self, source_id: str, comments: list[CommentRecord]) -> int:
+        inserted = 0
+        now = utc_now()
+        for comment in comments:
+            fingerprint = _hash_text(json.dumps({
+                "source_id": source_id,
+                "comment_id": comment.comment_id,
+                "parent_id": comment.parent_id,
+                "body": comment.body,
+                "posted_at": comment.posted_at,
+            }, ensure_ascii=False, sort_keys=True))[:24]
+            cursor = self.connection.execute(
+                """INSERT OR IGNORE INTO kaitori_comments
+                (id, source_id, gallery_id, post_url, comment_id, parent_id, author_name, author_type, body, posted_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (fingerprint, source_id, comment.gallery_id, comment.post_url, comment.comment_id, comment.parent_id, comment.author_name, comment.author_type, comment.body, comment.posted_at, now),
+            )
+            inserted += int(cursor.rowcount == 1)
+        self.connection.commit()
+        return inserted
+
+    def list_comments(self, *, job_id: str | None = None, source_id: str | None = None) -> list[dict[str, Any]]:
+        query = """SELECT c.* FROM kaitori_comments c
+                   JOIN kaitori_sources s ON s.id = c.source_id
+                   LEFT JOIN kaitori_job_sources js ON js.source_id = c.source_id
+                   WHERE 1=1"""
+        values: list[Any] = []
+        if job_id:
+            query += " AND js.job_id = ?"
+            values.append(job_id)
+        if source_id:
+            query += " AND c.source_id = ?"
+            values.append(source_id)
+        query += " GROUP BY c.id ORDER BY c.posted_at, c.id"
+        return [dict(row) for row in self.connection.execute(query, values).fetchall()]
 
     def attach_source_to_job(self, job_id: str, source_id: str) -> None:
         self.connection.execute(
@@ -372,7 +432,7 @@ class Repository:
         return inserted
 
     def list_rows(self, *, job_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
-        query = """SELECT r.*, s.gallery_id, s.post_url, s.title AS post_title, s.posted_at, s.raw_html
+        query = """SELECT r.*, s.gallery_id, s.post_url, s.title AS post_title, s.posted_at, s.raw_html, s.author_name, s.author_type
                    FROM kaitori_rows r
                    JOIN kaitori_sources s ON s.id = r.source_id
                    LEFT JOIN kaitori_job_rows jr ON jr.row_id = r.id
@@ -402,7 +462,7 @@ class Repository:
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         query = """SELECT DISTINCT r.*, s.gallery_id, s.post_url, s.title AS post_title,
-                   s.posted_at, s.source_status
+                   s.posted_at, s.source_status, s.author_name, s.author_type
                    FROM kaitori_rows r
                    JOIN kaitori_sources s ON s.id = r.source_id
                    WHERE 1=1"""
@@ -592,6 +652,8 @@ class Repository:
         counts = _empty_counts()
         source_count = self.connection.execute("SELECT COUNT(*) FROM kaitori_job_sources WHERE job_id = ?", (job_id,)).fetchone()[0]
         counts["sources"] = int(source_count)
+        counts["comments"] = int(self.connection.execute("""SELECT COUNT(*) FROM kaitori_comments c
+            JOIN kaitori_job_sources js ON js.source_id = c.source_id WHERE js.job_id = ?""", (job_id,)).fetchone()[0])
         for row in self.connection.execute("""SELECT r.status, COUNT(*) AS count
             FROM kaitori_rows r JOIN kaitori_job_rows jr ON jr.row_id = r.id
             WHERE jr.job_id = ? GROUP BY r.status""", (job_id,)).fetchall():
@@ -606,7 +668,7 @@ class Repository:
 
 
 def _empty_counts() -> dict[str, int]:
-    return {"sources": 0, "rows": 0, "parsed": 0, "needs_review": 0, "approved": 0, "rejected": 0, "exported": 0, "sell": 0, "buy": 0, "trade": 0, "unknown": 0}
+    return {"sources": 0, "comments": 0, "rows": 0, "parsed": 0, "needs_review": 0, "approved": 0, "rejected": 0, "exported": 0, "sell": 0, "buy": 0, "trade": 0, "unknown": 0}
 
 
 def _card_summary(card_key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:

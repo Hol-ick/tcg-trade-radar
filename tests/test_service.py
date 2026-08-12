@@ -11,9 +11,15 @@ LIST_HTML = """
 <table><tr><td class="gall_subject">판매</td><td><a class="gall_tit" href="/mgallery/board/view/?id=tcggame&amp;no=1">첫 글</a></td></tr></table>
 """
 POST_HTML = """
-<html><head><script type="application/ld+json">
+<html><head><input type="hidden" name="ci_t" value="fixture-token"><script type="application/ld+json">
 {"headline":"판매 카드","datePublished":"2026-08-12T10:00:00+09:00","articleBody":"블루아이즈 울레 35,000원 택포"}
 </script></head><body><span class="title_subject">판매 카드</span><div class="write_div">블루아이즈 울레 35,000원 택포</div></body></html>
+"""
+COMMENT_HTML = """
+<div class="gallery_re_contents"><table><tr class="reply_line">
+<td class="user user_layer" user_name="거래상대" user_id="dealer01">거래상대</td>
+<td class="reply">구매 의사 있어요.</td><td class="retime">2026-08-12 10:20:00</td>
+</tr></table></div>
 """
 
 
@@ -77,6 +83,25 @@ class JobServiceTests(unittest.TestCase):
 
             self.assertEqual(status["state"], "completed")
             self.assertTrue(any("재시도" in log["message"] for log in service.get_logs(job_id)))
+            repo.close()
+
+    def test_job_collects_public_comments_and_author_type(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            service = JobService(
+                repo,
+                fetcher=lambda url: LIST_HTML if "lists" in url else POST_HTML,
+                comment_fetcher=lambda post_url, gallery_id, post_number, ci_t, page: COMMENT_HTML,
+            )
+            job_id = service.create_job(JobRequest(gallery_id="tcggame", max_posts=1), start=False)
+
+            status = service.run_job(job_id)
+
+            self.assertEqual(status["state"], "completed")
+            self.assertEqual(status["counts"]["comments"], 1)
+            comments = repo.list_comments(job_id=job_id)
+            self.assertEqual(comments[0]["author_name"], "거래상대")
+            self.assertEqual(comments[0]["author_type"], "registered")
             repo.close()
 
 
