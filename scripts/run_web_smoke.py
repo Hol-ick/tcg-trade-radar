@@ -27,7 +27,7 @@ def main() -> int:
         page.goto(f"http://127.0.0.1:5173{options.path}", wait_until="networkidle")
         suffix = options.path.strip("/").replace("/", "-") or "main"
         page.screenshot(path=str(ARTIFACTS / f"web-ui-{suffix}-before-crawl.png"), full_page=True)
-        if options.path == "/dev":
+        if options.path.rstrip("/") == "/dev":
             page.get_by_text("DEVELOPMENT SURFACE / LIVE SOURCE CHECK", exact=True).wait_for()
         page.get_by_text("실행 상태", exact=True).wait_for()
         if options.no_crawl:

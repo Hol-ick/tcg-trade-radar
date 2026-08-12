@@ -11,7 +11,8 @@ import type { JobRequest } from "@/lib/types"
 import { DevPage } from "@/dev-page"
 
 export function App() {
-  if (window.location.pathname === "/dev") {
+  const isDevPage = window.location.pathname === "/dev" || window.location.pathname.endsWith("/dev/") || new URLSearchParams(window.location.search).get("page") === "dev"
+  if (isDevPage) {
     return <DevPage />
   }
 
@@ -56,7 +57,7 @@ function Dashboard() {
           <div><div className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-500">TCG / TRADE RADAR</div><div className="font-semibold tracking-tight text-white">수집 관제판</div></div>
         </a>
         <div className="flex items-center gap-3 text-xs text-slate-400">
-          <a href="/dev" className="rounded-full border border-cyan-300/20 px-2.5 py-1 text-cyan-200 hover:bg-cyan-300/10">DEV</a>
+          <a href={`${import.meta.env.BASE_URL}dev/`} className="rounded-full border border-cyan-300/20 px-2.5 py-1 text-cyan-200 hover:bg-cyan-300/10">DEV</a>
           <span className={`status-dot ${health.state === "online" ? "status-online" : health.state === "offline" ? "status-offline" : "status-checking"}`} />
           <span>{health.state === "online" ? `worker online · ${health.version || "ready"}` : health.state === "offline" ? "worker 연결 필요" : "worker 확인 중"}</span>
         </div>

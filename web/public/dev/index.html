@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="robots" content="noindex" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TCG Trade Radar · Dev Probe</title>
+  </head>
+  <body>
+    <p>Loading dev probe…</p>
+    <script>
+      const target = new URL("../", window.location.href)
+      target.searchParams.set("page", "dev")
+      window.location.replace(target.href)
+    </script>
+  </body>
+</html>

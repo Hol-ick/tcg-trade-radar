@@ -34,7 +34,7 @@ export function DevPage() {
     <main className="min-h-svh overflow-hidden bg-[#0c141c] text-slate-100">
       <div className="radar-grid pointer-events-none fixed inset-0 opacity-60" />
       <header className="relative mx-auto flex max-w-7xl items-center justify-between px-5 py-5 sm:px-8 lg:px-10">
-        <a href="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white"><ArrowLeft className="size-4" /> 관제판으로 돌아가기</a>
+        <a href={import.meta.env.BASE_URL} className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white"><ArrowLeft className="size-4" /> 관제판으로 돌아가기</a>
         <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-orange-300"><FlaskConical className="size-4" /> dev probe</div>
       </header>
 
@@ -62,7 +62,7 @@ export function DevPage() {
 
         <div className="mt-8 flex flex-col gap-3 border-t border-white/10 pt-5 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between">
           <span className="inline-flex items-center gap-2"><CheckCircle2 className="size-3.5 text-emerald-300" /> diagnostics remain visible on empty or changed responses</span>
-          <a href="/" className="inline-flex items-center gap-1 hover:text-slate-300">main console <ExternalLink className="size-3" /></a>
+          <a href={import.meta.env.BASE_URL} className="inline-flex items-center gap-1 hover:text-slate-300">main console <ExternalLink className="size-3" /></a>
         </div>
       </div>
     </main>
