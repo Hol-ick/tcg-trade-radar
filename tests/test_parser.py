@@ -1,8 +1,17 @@
 import unittest
 from unittest.mock import patch
 
-from kaitori_collector.html import parse_html
-from kaitori_collector.parser import SourceResponseError, build_list_url, extract_gallery, extract_post, fetch_text, fetch_text_auto, parse_sale_line
+from kaitori_collector.html import DCInsideHTMLParser, parse_html
+from kaitori_collector.parser import (
+    SourceResponseError,
+    build_list_url,
+    extract_gallery,
+    extract_post,
+    fetch_text,
+    fetch_text_auto,
+    mobile_url_for,
+    parse_sale_line,
+)
 
 
 class _EmptyResponse:
@@ -28,6 +37,60 @@ class _EmptyResponse:
 
 
 class ParserTests(unittest.TestCase):
+    def test_mobile_url_for_desktop_list_and_post(self):
+        self.assertEqual(
+            mobile_url_for("https://gall.dcinside.com/mgallery/board/lists?id=tcggame&page=2"),
+            "https://m.dcinside.com/board/tcggame?page=2",
+        )
+        self.assertEqual(
+            mobile_url_for("https://gall.dcinside.com/mgallery/board/view/?id=tcggame&no=4305567"),
+            "https://m.dcinside.com/board/tcggame/4305567",
+        )
+
+    def test_auto_transport_tries_mobile_after_empty_http_response(self):
+        mobile_html = "<html><body>mobile gallery</body></html>"
+        http_error = SourceResponseError(
+            "https://example.test/list",
+            status=200,
+            content_length="0",
+            server="nginx",
+        )
+        with patch("kaitori_collector.parser.fetch_text", side_effect=http_error):
+            with patch("kaitori_collector.parser.fetch_text_mobile", return_value=mobile_html) as mobile:
+                self.assertEqual(fetch_text_auto("https://example.test/list"), mobile_html)
+                mobile.assert_called_once()
+
+    def test_mobile_list_rows_are_parsed(self):
+        html = '''
+        <ul class="gall-detail-lst">
+          <li><div class="gall-detail-lnktb">
+            <a class="lt" href="https://m.dcinside.com/board/tcggame/1">
+              <span class="subject-add"><span class="subjectin">카드 팝니다</span></span>
+              <ul class="ginfo"><li>판매</li><li class="list-nick">카드상인<span class="sp-nick gonick"></span></li></ul>
+            </a>
+          </div></li>
+        </ul>
+        '''
+        parser = DCInsideHTMLParser()
+        parser.feed(html)
+
+        self.assertEqual(len(parser.list_rows), 1)
+        self.assertEqual(parser.list_rows[0]["subject"], "판매")
+        self.assertEqual(parser.list_rows[0]["href"], "https://m.dcinside.com/board/tcggame/1")
+
+    def test_mobile_post_marker_sets_guest_author_type(self):
+        html = '''
+        <div class="gallview-tit-box">
+          <div class="ginfo-area"><button class="nick">Maki</button><span class="sp-nick nogonick"></span></div>
+        </div>
+        <div class="thum-txtin">블루아이즈 3.5</div>
+        '''
+
+        document, _ = parse_html(html, "https://m.dcinside.com/board/tcggame/1")
+
+        self.assertEqual(document["author_name"], "Maki")
+        self.assertEqual(document["author_type"], "guest")
+
     def test_auto_transport_falls_back_to_browser_after_empty_http_response(self):
         browser_html = '<html><body><table><tr><td class="gall_subject">판매</td></tr></table></body></html>'
         http_error = SourceResponseError(

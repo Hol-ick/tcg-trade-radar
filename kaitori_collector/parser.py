@@ -10,7 +10,7 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import parse_qs, urlencode, urljoin, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -23,6 +23,10 @@ from .intent import classify_listing
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 Chrome/131.0 Safari/537.36 Marineford-Kaitori/0.1"
+)
+MOBILE_USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 13; SM-S918N) "
+    "AppleWebKit/537.36 Chrome/131.0 Mobile Safari/537.36"
 )
 
 
@@ -98,19 +102,77 @@ def fetch_text(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_USER_A
     return payload.decode(encoding, errors="replace")
 
 
+def mobile_url_for(url: str) -> str:
+    """Map a public desktop gallery URL to DCInside's mobile read-only page."""
+    parsed = urlparse(url)
+    if parsed.netloc.lower() == "m.dcinside.com" and parsed.path.startswith("/board/"):
+        return url
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    gallery_id = query.get("id", [""])[0].strip()
+    if not gallery_id:
+        return url
+    if "/board/view" in parsed.path:
+        post_number = query.get("no", [""])[0].strip()
+        if not post_number:
+            return url
+        path = f"/board/{quote(gallery_id, safe='')}/{quote(post_number, safe='')}"
+        query.pop("id", None)
+        query.pop("no", None)
+    else:
+        path = f"/board/{quote(gallery_id, safe='')}"
+        query.pop("id", None)
+        query.pop("list_num", None)
+    return urlunparse(("https", "m.dcinside.com", path, "", urlencode(query, doseq=True), ""))
+
+
+def fetch_text_mobile(url: str, timeout: float = 20.0) -> str:
+    """Fetch the mobile public page, which is a separate DCInside delivery path."""
+    mobile_url = mobile_url_for(url)
+    request = Request(
+        mobile_url,
+        headers={
+            "User-Agent": MOBILE_USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8",
+            "Referer": "https://m.dcinside.com/",
+            "Cache-Control": "no-cache",
+        },
+    )
+    with urlopen(request, timeout=timeout) as response:
+        payload = response.read()
+        encoding = response.headers.get_content_charset() or "utf-8"
+        if not payload:
+            raise SourceResponseError(
+                mobile_url,
+                status=getattr(response, "status", None),
+                content_length=response.headers.get("Content-Length"),
+                server=response.headers.get("Server"),
+                transport="mobile-http",
+            )
+    return payload.decode(encoding, errors="replace")
+
+
 def fetch_text_browser(url: str, timeout: float = 30.0, user_agent: str = DEFAULT_USER_AGENT) -> str:
     """Fetch one public page through a normal browser page."""
     return get_default_transport(user_agent=user_agent).fetch(url, timeout)
 
 
 def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_USER_AGENT) -> str:
-    """Try direct HTTP first, then the Playwright transport for browser-only responses."""
+    """Try desktop HTTP, then mobile HTTP, then the browser transport."""
     try:
         return fetch_text(url, timeout, user_agent)
     except (SourceResponseError, HTTPError) as http_error:
+        mobile_error: Exception | None = None
+        try:
+            return fetch_text_mobile(url, max(timeout, 20.0))
+        except (SourceResponseError, HTTPError, OSError) as error:
+            mobile_error = error
         try:
             return fetch_text_browser(url, max(timeout, 30.0), user_agent)
         except BrowserTransportError as browser_error:
+            fallback = str(browser_error)
+            if mobile_error is not None:
+                fallback = f"mobile={mobile_error}; browser={fallback}"
             if isinstance(http_error, SourceResponseError):
                 raise SourceResponseError(
                     url,
@@ -118,7 +180,7 @@ def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_U
                     content_length=http_error.content_length,
                     server=http_error.server,
                     transport="http+playwright",
-                    fallback_error=str(browser_error),
+                    fallback_error=fallback,
                 ) from browser_error
             raise SourceResponseError(
                 url,
@@ -126,7 +188,7 @@ def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_U
                 content_length=None,
                 server=None,
                 transport="http+playwright",
-                fallback_error=str(browser_error),
+                fallback_error=fallback,
             ) from browser_error
 
 

@@ -4,6 +4,27 @@ from kaitori_collector.comments import parse_comments
 
 
 class CommentParserTests(unittest.TestCase):
+    def test_parse_mobile_comments(self):
+        html = '''
+        <ul class="all-comment-lst">
+          <li class="comment" id="comment_cnt_1">
+            <div class="ginfo-area"><button class="nick">카드상인</button><span class="sp-nick gonick"></span></div>
+            <p class="txt">거래 가능합니다.</p><span class="date">08.12 16:18</span>
+          </li>
+          <li class="comment" id="comment_cnt_2">
+            <div class="ginfo-area"><button class="nick">ㅇㅇ</button><span class="sp-nick nogonick"></span></div>
+            <p class="txt">사진 있나요?</p><span class="date">08.12 16:19</span>
+          </li>
+        </ul>
+        '''
+
+        comments = parse_comments(html, "https://m.dcinside.com/board/tcggame/1", "tcggame")
+
+        self.assertEqual(len(comments), 2)
+        self.assertEqual(comments[0].author_name, "카드상인")
+        self.assertEqual(comments[0].author_type, "registered")
+        self.assertEqual(comments[1].author_type, "guest")
+
     def test_parse_comments_keeps_public_author_and_omits_ip(self):
         html = '''
         <div class="gallery_re_contents"><table>

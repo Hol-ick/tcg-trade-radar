@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
+from html import unescape
 from typing import Any
 
 from .html import DCInsideHTMLParser
@@ -34,7 +35,10 @@ class SourceResponseProfile:
 
 def inspect_source_response(html: str, url: str, *, expected: str) -> SourceResponseProfile:
     value = html or ""
-    lowered = value.casefold()
+    visible = re.sub(r"<script\b[^>]*>.*?</script\s*>", " ", value, flags=re.I | re.S)
+    visible = re.sub(r"<style\b[^>]*>.*?</style\s*>", " ", visible, flags=re.I | re.S)
+    visible = unescape(re.sub(r"<[^>]+>", " ", visible)).casefold()
+    lowered = visible
     markers = tuple(marker for marker in BLOCK_MARKERS if marker.casefold() in lowered)
     if not value.strip():
         return SourceResponseProfile("empty", expected, 0, 0, 0, markers, "응답 본문이 비어 있음")

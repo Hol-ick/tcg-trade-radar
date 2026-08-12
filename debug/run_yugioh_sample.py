@@ -43,7 +43,7 @@ def main() -> int:
         since=since.isoformat(),
         until=until.isoformat(),
         max_posts=max_posts,
-        max_pages=1,
+        max_pages=5,
         delay=1.0,
         max_retries=2,
         keep_raw=True,

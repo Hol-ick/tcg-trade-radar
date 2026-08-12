@@ -17,6 +17,20 @@ class ObservabilityTests(unittest.TestCase):
 
         self.assertEqual(profile.state, "structure_changed")
 
+    def test_captcha_asset_in_normal_post_is_not_a_blocked_response(self):
+        html = '''
+        <html><body>
+          <div class="gallview-tit-box">판매 카드</div>
+          <div class="thum-txtin">블루아이즈 3.5</div>
+          <img src="/captcha/captcha.png" alt="captcha">
+          <script>const captcha = document.querySelector('#captcha');</script>
+        </body></html>
+        '''
+
+        profile = inspect_source_response(html, "https://m.example.test/post/1", expected="post")
+
+        self.assertEqual(profile.state, "ok")
+
     def test_retry_backoff_is_bounded(self):
         self.assertEqual(retry_delay(0), 1.0)
         self.assertEqual(retry_delay(1), 2.0)

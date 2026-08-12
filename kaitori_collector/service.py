@@ -297,12 +297,23 @@ class JobService:
         raise RuntimeError("unreachable fetch retry state")
 
     def _collect_comments(self, job_id: str, post_url: str, gallery_id: str, post_html: str, source_id: str, request: JobRequest) -> int:
+        inline_comments = parse_comments(post_html, post_url, gallery_id)
+        total_inserted = 0
+        if inline_comments:
+            inserted = self.repository.insert_comments(source_id, inline_comments)
+            total_inserted += inserted
+            self._log(
+                job_id,
+                step="comments",
+                message=f"본문 포함 댓글 파싱 완료 · {len(inline_comments)}개 / 신규 {inserted}개",
+                details={"url": post_url, "page": 1, "comments": len(inline_comments), "inserted": inserted, "transport": "post_html"},
+            )
         ci_t = extract_comment_token(post_html)
         post_number = parse_qs(urlparse(post_url).query).get("no", [""])[0]
         if not ci_t or not post_number:
-            self._log(job_id, level="warning", step="comments", message="댓글 조회 토큰 또는 게시글 번호 없음", details={"url": post_url})
-            return 0
-        total_inserted = 0
+            if not inline_comments:
+                self._log(job_id, level="warning", step="comments", message="댓글 조회 토큰 또는 게시글 번호 없음", details={"url": post_url})
+            return total_inserted
         for page in range(1, 26):
             try:
                 html = self._fetch_comment_with_retry(job_id, post_url, gallery_id, post_number, ci_t, page, request)

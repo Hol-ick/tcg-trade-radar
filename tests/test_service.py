@@ -21,6 +21,15 @@ COMMENT_HTML = """
 <td class="reply">구매 의사 있어요.</td><td class="retime">2026-08-12 10:20:00</td>
 </tr></table></div>
 """
+MOBILE_POST_WITH_COMMENTS = """
+<html><head><script type="application/ld+json">
+{"headline":"판매 카드","datePublished":"2026-08-12T10:00:00+09:00","articleBody":"블루아이즈 울레 35,000원 택포"}
+</script></head><body>
+<span class="gallview-tit-box"><button class="nick">판매자</button><span class="sp-nick gonick"></span></span>
+<div class="thum-txtin">블루아이즈 울레 35,000원 택포</div>
+<ul class="all-comment-lst"><li class="comment" no="88"><div class="ginfo-area"><button class="nick">구매자</button><span class="sp-nick gonick"></span></div><p class="txt">구매할게요.</p><span class="date">08.12 10:20</span></li></ul>
+</body></html>
+"""
 
 
 class JobServiceTests(unittest.TestCase):
@@ -101,6 +110,25 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(status["counts"]["comments"], 1)
             comments = repo.list_comments(job_id=job_id)
             self.assertEqual(comments[0]["author_name"], "거래상대")
+            self.assertEqual(comments[0]["author_type"], "registered")
+            repo.close()
+
+    def test_job_collects_inline_mobile_comments_without_comment_endpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            service = JobService(
+                repo,
+                fetcher=lambda url: LIST_HTML if "lists" in url else MOBILE_POST_WITH_COMMENTS,
+                comment_fetcher=lambda *_args: "",
+            )
+            job_id = service.create_job(JobRequest(gallery_id="tcggame", max_posts=1), start=False)
+
+            status = service.run_job(job_id)
+
+            self.assertEqual(status["state"], "completed")
+            self.assertEqual(status["counts"]["comments"], 1)
+            comments = repo.list_comments(job_id=job_id)
+            self.assertEqual(comments[0]["author_name"], "구매자")
             self.assertEqual(comments[0]["author_type"], "registered")
             repo.close()
 

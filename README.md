@@ -71,9 +71,9 @@ python debug/probe_galleries.py --gallery tcggame --gallery onepiececardgame --g
 python debug/run_yugioh_sample.py --max-posts 10
 ```
 
-수집 전송은 `auto`가 기본값이며 HTTP 요청이 빈 응답이면 Playwright 브라우저 페이지로 한 번 더 읽습니다. 직접 선택하려면 `python debug/run_yugioh_sample.py --transport browser --max-posts 10`을 사용합니다. 브라우저가 설치된 경로가 자동 인식되지 않으면 `TCG_TRADE_BROWSER_EXECUTABLE`에 Chrome 실행 파일 경로를 지정합니다.
+수집 전송은 `auto`가 기본값이며 데스크톱 HTTP 응답이 비면 DCInside 모바일 읽기 경로와 모바일 User-Agent로 다시 읽고, 그래도 실패할 때만 Playwright 브라우저를 사용합니다. 직접 선택하려면 `python debug/run_yugioh_sample.py --transport browser --max-posts 10`을 사용합니다. 브라우저가 설치된 경로가 자동 인식되지 않으면 `TCG_TRADE_BROWSER_EXECUTABLE`에 Chrome 실행 파일 경로를 지정합니다.
 
-결과 JSON에는 게시글 작성자, 유동·고닉 유형, 댓글, 단계별 로그가 함께 포함됩니다. 댓글은 글 조회 응답과 분리된 공개 댓글 응답에서 읽습니다.
+결과 JSON에는 게시글 작성자, 유동·고닉 유형, 댓글, 단계별 로그가 함께 포함됩니다. 댓글은 모바일 글 응답에 포함된 공개 댓글을 먼저 읽고, 필요한 경우 별도 공개 댓글 응답을 추가로 조회합니다.
 
 ## 개발 확인
 
@@ -82,7 +82,7 @@ python -m unittest discover -s tests -v
 python -m compileall -q kaitori_collector debug tests scripts
 ```
 
-수집 로그에 `원본 서버가 빈 응답을 반환했습니다`와 `status=200, content_length=0`이 표시되면 파서 문제가 아니라 실행 환경에서 원본 서버가 본문을 보내지 않은 상태입니다. 이 경우 `python debug/probe_galleries.py --gallery tcggame`으로 갤러리별 응답을 확인하고, 다른 네트워크에서 같은 명령을 다시 실행해 비교합니다. CAPTCHA나 차단 우회는 사용하지 않습니다.
+수집 로그에 `원본 서버가 빈 응답을 반환했습니다`와 `status=200, content_length=0`이 표시되면 데스크톱 전송이 비어 모바일 읽기 경로로 전환되지 못한 상태입니다. 목록의 `판매·구매·거래` 글이 1페이지에 없을 수 있으므로 샘플 수집은 최근 5페이지까지 확인합니다. `python debug/probe_galleries.py --gallery tcggame`으로 갤러리별 응답을 확인할 수 있습니다. CAPTCHA나 차단 우회는 사용하지 않습니다.
 
 ## 범위와 주의사항
 

@@ -13,6 +13,72 @@ VOID_TAGS = {
 }
 
 
+class MobileListParser(HTMLParser):
+    """Parse the mobile gallery list markup used by m.dcinside.com."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, set[str]]] = []
+        self.current: dict[str, str] | None = None
+        self.info_active = False
+        self.info_li_depth: int | None = None
+        self.info_parts: list[str] = []
+        self._rows: list[dict[str, str]] = []
+
+    def _has_class(self, name: str) -> bool:
+        return any(name in classes for _, classes in self.stack)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        classes = set((attributes.get("class") or "").split())
+        if tag not in VOID_TAGS:
+            self.stack.append((tag, classes))
+        if tag == "div" and "gall-detail-lnktb" in classes:
+            self.current = {"subject": "", "href": ""}
+        elif self.current is not None and tag == "a" and "lt" in classes:
+            self.current["href"] = attributes.get("href") or ""
+        elif self.current is not None and tag == "ul" and "ginfo" in classes:
+            self.info_active = True
+        elif self.current is not None and tag == "li" and self.info_active and self.info_li_depth is None:
+            self.info_li_depth = len(self.stack)
+            self.info_parts = []
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag not in VOID_TAGS:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.current is not None and tag == "li" and self.info_li_depth == len(self.stack):
+            if not self.current["subject"]:
+                self.current["subject"] = normalize_space("".join(self.info_parts))
+            self.info_li_depth = None
+            self.info_parts = []
+        if self.current is not None and tag == "ul" and self.info_active:
+            self.info_active = False
+        if tag == "div" and self.stack and self.stack[-1][0] == "div" and "gall-detail-lnktb" in self.stack[-1][1]:
+            if self.current is not None and (self.current["subject"] or self.current["href"]):
+                self.current["subject"] = normalize_space(self.current["subject"])
+                self.current["href"] = self.current["href"].strip()
+                self._rows.append(dict(self.current))
+            self.current = None
+            self.info_active = False
+            self.info_li_depth = None
+            self.info_parts = []
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                break
+
+    def handle_data(self, data: str) -> None:
+        if self.current is not None and self.info_li_depth is not None:
+            self.info_parts.append(data)
+
+    @property
+    def rows(self) -> list[dict[str, str]]:
+        return self._rows
+
+
 class DCInsideHTMLParser(HTMLParser):
     """Collect title, body, JSON-LD and list rows without executing page code."""
 
@@ -34,6 +100,10 @@ class DCInsideHTMLParser(HTMLParser):
         self._author_active = False
         self._author_parts: list[str] = []
         self._author_attrs: dict[str, str] = {}
+        self._mobile_post_author_active = False
+        self._mobile_post_author_parts: list[str] = []
+        self._mobile_post_author_marker = ""
+        self._mobile_list_parser = MobileListParser()
 
     def _has_class(self, name: str) -> bool:
         return any(name in classes for _, classes in self.stack)
@@ -61,6 +131,8 @@ class DCInsideHTMLParser(HTMLParser):
 
         if self._has_class("write_div"):
             self._append(self.write_parts, "\n" if tag in {"br", "p", "div", "li"} else "")
+        if self._has_class("thum-txtin"):
+            self._append(self.write_parts, "\n" if tag in {"br", "p", "div", "li"} else "")
         if self._has_class("title_headtext"):
             self._append(self.title_head_parts, "\n" if tag == "br" else "")
         if self._has_class("title_subject"):
@@ -72,6 +144,14 @@ class DCInsideHTMLParser(HTMLParser):
             self._author_active = True
             self._author_parts = []
             self._author_attrs = {key: value or "" for key, value in attributes.items()}
+
+        if not self.author_name and tag == "button" and "nick" in classes and self._has_class("gallview-tit-box"):
+            self._mobile_post_author_active = True
+            self._mobile_post_author_parts = []
+        if tag == "span" and "sp-nick" in classes and self._has_class("gallview-tit-box"):
+            self._mobile_post_author_marker = "registered" if "gonick" in classes else "guest"
+            if self.author_name:
+                self.author_type = self._mobile_post_author_marker
 
         if self.current_row is not None and tag == "a" and ("gall_tit" in classes or self._has_class("gall_tit")):
             self.current_row["href"] = attributes.get("href") or ""
@@ -91,6 +171,11 @@ class DCInsideHTMLParser(HTMLParser):
             self.author_name = normalize_space("".join(self._author_parts))
             self.author_type = infer_author_type(self.author_name, self._author_attrs)
             self._author_active = False
+
+        if self._mobile_post_author_active and tag == "button":
+            self.author_name = normalize_space("".join(self._mobile_post_author_parts))
+            self.author_type = self._mobile_post_author_marker or infer_author_type(self.author_name)
+            self._mobile_post_author_active = False
 
         if tag == "td" and self.subject_depth == len(self.stack) and self.current_row is not None:
             self.current_row["subject"] = "".join(self.current_row_subject)
@@ -115,18 +200,35 @@ class DCInsideHTMLParser(HTMLParser):
             self.json_ld_parts.append(data)
         if self._has_class("write_div"):
             self._append(self.write_parts, data)
+        if self._has_class("thum-txtin"):
+            self._append(self.write_parts, data)
         if self._has_class("title_headtext"):
             self._append(self.title_head_parts, data)
         if self._has_class("title_subject"):
             self._append(self.title_subject_parts, data)
         if self._author_active:
             self._author_parts.append(data)
+        if self._mobile_post_author_active:
+            self._mobile_post_author_parts.append(data)
         if self.subject_depth is not None and self.current_row is not None:
             self.current_row_subject.append(data)
 
     @property
     def list_rows(self) -> list[dict[str, str]]:
-        return self._list_rows
+        rows = self._list_rows + self._mobile_list_parser.rows
+        unique: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for row in rows:
+            key = (row.get("subject", ""), row.get("href", ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(row)
+        return unique
+
+    def feed(self, data: str) -> None:
+        super().feed(data)
+        self._mobile_list_parser.feed(data)
 
 
 def normalize_space(value: str) -> str:
@@ -158,18 +260,22 @@ def parse_html(html: str, url: str) -> tuple[dict[str, Any], DCInsideHTMLParser]
     parser.feed(html)
     metadata = parse_json_ld(parser.json_ld_scripts)
     title = normalize_space(" ".join(parser.title_subject_parts)) or normalize_space(str(metadata.get("headline", "")))
+    title = re.sub(r"\s+-\s+.*?갤러리\s*$", "", title)
     subject = normalize_space(" ".join(parser.title_head_parts))
     body = normalize_body("".join(parser.write_parts))
     if not body:
         body = normalize_body(str(metadata.get("articleBody", "")))
+    author = metadata.get("author")
+    metadata_author = author.get("name", "") if isinstance(author, dict) else str(author or "")
+    author_name = parser.author_name or normalize_space(metadata_author)
     return {
         "title": title,
         "subject": subject,
         "body": body,
         "url": str(metadata.get("url") or url),
         "posted_at": str(metadata.get("datePublished") or ""),
-        "author_name": parser.author_name,
-        "author_type": parser.author_type,
+        "author_name": author_name,
+        "author_type": parser.author_type if parser.author_name else infer_author_type(author_name),
     }, parser
 
 
