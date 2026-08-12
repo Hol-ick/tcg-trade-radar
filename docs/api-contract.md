@@ -125,6 +125,18 @@
 
 가격이 없는 구매글도 `buy_count`와 수요 표본에는 포함되며 `wanted_price_median`은 `null`일 수 있다.
 
+추가 분석 필드:
+
+- `card_name_normalized`: 분석용 정규화 카드명. 원문을 대체하지 않는다.
+- `sell_post_count`, `buy_post_count`: 거래 행이 속한 고유 게시글 수.
+- `sell_quantity`, `buy_quantity`: 수집된 수량 합계.
+- `recent_sell_count`, `recent_buy_count`: 기준일로부터 7일 이내의 거래 행 수.
+- `demand_ratio`: 전체 구매 행 수를 판매 행 수로 나눈 비율.
+- `demand_score`: 최근성 가중 구매량을 최근성 가중 판매량으로 나눈 값.
+- `quality_status`: `observed`, `low_sample`, `needs_review` 중 하나.
+
+최근성 가중치는 7일 이내 1.0, 8~30일 0.5, 그 이전 0.25이며, 날짜가 없는 행은 수요 건수에는 포함하되 최근성 점수에는 포함하지 않는다.
+
 ## `POST /rows/:id/review`
 
 ```json

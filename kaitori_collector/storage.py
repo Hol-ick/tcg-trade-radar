@@ -5,12 +5,14 @@ import hashlib
 import json
 import sqlite3
 import uuid
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from .contracts import CommentRecord, ExtractedRow, JobRequest, ReviewAction, to_public_row, utc_now
+from .normalization import normalize_listing_card_label
 
 
 SCHEMA_SQL = """
@@ -153,6 +155,14 @@ CREATE TABLE IF NOT EXISTS kaitori_demand_snapshots (
   wanted_price_median INTEGER,
   active_source_count INTEGER NOT NULL DEFAULT 0,
   demand_score REAL NOT NULL DEFAULT 0,
+  demand_ratio REAL NOT NULL DEFAULT 0,
+  sell_post_count INTEGER NOT NULL DEFAULT 0,
+  buy_post_count INTEGER NOT NULL DEFAULT 0,
+  sell_quantity INTEGER NOT NULL DEFAULT 0,
+  buy_quantity INTEGER NOT NULL DEFAULT 0,
+  recent_sell_count INTEGER NOT NULL DEFAULT 0,
+  recent_buy_count INTEGER NOT NULL DEFAULT 0,
+  quality_status TEXT NOT NULL DEFAULT 'needs_review',
   created_at TEXT NOT NULL,
   UNIQUE(snapshot_date, game_id, card_key)
 );
@@ -186,6 +196,20 @@ class Repository:
         for column, definition in additions.items():
             if column not in existing:
                 self.connection.execute(f"ALTER TABLE kaitori_rows ADD COLUMN {column} {definition}")
+        snapshot_existing = {row[1] for row in self.connection.execute("PRAGMA table_info(kaitori_demand_snapshots)").fetchall()}
+        snapshot_additions = {
+            "demand_ratio": "REAL NOT NULL DEFAULT 0",
+            "sell_post_count": "INTEGER NOT NULL DEFAULT 0",
+            "buy_post_count": "INTEGER NOT NULL DEFAULT 0",
+            "sell_quantity": "INTEGER NOT NULL DEFAULT 0",
+            "buy_quantity": "INTEGER NOT NULL DEFAULT 0",
+            "recent_sell_count": "INTEGER NOT NULL DEFAULT 0",
+            "recent_buy_count": "INTEGER NOT NULL DEFAULT 0",
+            "quality_status": "TEXT NOT NULL DEFAULT 'needs_review'",
+        }
+        for column, definition in snapshot_additions.items():
+            if column not in snapshot_existing:
+                self.connection.execute(f"ALTER TABLE kaitori_demand_snapshots ADD COLUMN {column} {definition}")
         source_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(kaitori_sources)").fetchall()}
         if "source_status" not in source_columns:
             self.connection.execute("ALTER TABLE kaitori_sources ADD COLUMN source_status TEXT NOT NULL DEFAULT 'active'")
@@ -509,6 +533,24 @@ class Repository:
         values.append(max(1, min(int(limit), 1000)))
         return [dict(row) for row in self.connection.execute(query, values).fetchall()]
 
+    def list_card_listings(
+        self,
+        card_key: str,
+        *,
+        game_id: str = "",
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Return raw listings belonging to a normalized card summary key."""
+        key = str(card_key or "").strip().casefold()
+        rows = self.list_market_listings(game_id=game_id, since=since, until=until, limit=5000)
+        return [
+            row for row in rows
+            if str(row.get("card_code") or "").strip().replace("_", "-").casefold() == key
+            or normalize_listing_card_label(str(row.get("card_name_raw") or ""), str(row.get("listing_type") or "")).casefold() == key
+        ][: max(1, min(int(limit), 1000))]
+
     def summarize_cards(
         self,
         *,
@@ -520,13 +562,24 @@ class Repository:
         sort: str = "demand",
         limit: int = 200,
     ) -> list[dict[str, Any]]:
-        rows = self.list_market_listings(query_text=query_text, game_id=game_id, listing_type=listing_type, since=since, until=until, limit=5000)
+        rows = self.list_market_listings(query_text="", game_id=game_id, listing_type=listing_type, since=since, until=until, limit=5000)
+        if query_text.strip():
+            needle = query_text.strip().casefold()
+            normalized_needle = normalize_listing_card_label(query_text).casefold()
+            rows = [
+                row for row in rows
+                if needle in str(row.get("card_name_raw") or "").casefold()
+                or needle in str(row.get("card_code") or "").casefold()
+                or (normalized_needle and normalized_needle in normalize_listing_card_label(str(row.get("card_name_raw") or ""), str(row.get("listing_type") or "")).casefold())
+            ]
         groups: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
-            key = str(row.get("card_code") or row.get("card_name_raw") or "").strip()
+            code = str(row.get("card_code") or "").strip().upper().replace("_", "-")
+            normalized_name = normalize_listing_card_label(str(row.get("card_name_raw") or ""), str(row.get("listing_type") or ""))
+            key = code or normalized_name
             if key:
                 groups.setdefault(key, []).append(row)
-        result = [_card_summary(key, values) for key, values in groups.items()]
+        result = [_card_summary(key, values, reference_date=until or date.today().isoformat()) for key, values in groups.items()]
         if sort == "recent":
             result.sort(key=lambda item: item["latest_posted_at"], reverse=True)
         elif sort == "price_asc":
@@ -544,11 +597,13 @@ class Repository:
                 """INSERT OR REPLACE INTO kaitori_demand_snapshots
                 (snapshot_date, game_id, card_key, card_name_raw, sell_count, buy_count, trade_count,
                  sell_price_median, sell_price_min, sell_price_max, wanted_price_median,
-                 active_source_count, demand_score, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                active_source_count, demand_score, demand_ratio, sell_post_count, buy_post_count,
+                sell_quantity, buy_quantity, recent_sell_count, recent_buy_count, quality_status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (snapshot_date, game_id, summary["card_key"], summary["card_name_raw"], summary["sell_count"], summary["buy_count"], summary["trade_count"],
                  summary["sell_price_median"], summary["sell_price_min"], summary["sell_price_max"], summary["wanted_price_median"],
-                 summary["active_source_count"], summary["demand_score"], utc_now()),
+                 summary["active_source_count"], summary["demand_score"], summary["demand_ratio"], summary["sell_post_count"], summary["buy_post_count"],
+                 summary["sell_quantity"], summary["buy_quantity"], summary["recent_sell_count"], summary["recent_buy_count"], summary["quality_status"], utc_now()),
             )
         self.connection.commit()
         return len(summaries)
@@ -678,7 +733,7 @@ def _empty_counts() -> dict[str, int]:
     return {"sources": 0, "comments": 0, "rows": 0, "parsed": 0, "needs_review": 0, "approved": 0, "rejected": 0, "exported": 0, "sell": 0, "buy": 0, "trade": 0, "unknown": 0}
 
 
-def _card_summary(card_key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _card_summary(card_key: str, rows: list[dict[str, Any]], *, reference_date: str | None = None) -> dict[str, Any]:
     sells = [row for row in rows if row.get("listing_type") == "sell"]
     buys = [row for row in rows if row.get("listing_type") == "buy"]
     trades = [row for row in rows if row.get("listing_type") == "trade"]
@@ -687,7 +742,14 @@ def _card_summary(card_key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     active_sources = {row.get("source_id") for row in rows if row.get("source_id")}
     buy_count = len(buys)
     sell_count = len(sells)
-    if buy_count and sell_count == 0:
+    reference_day = _as_date(reference_date) or date.today()
+    recent_buys = [row for row in buys if _recentness_weight(row.get("posted_at"), reference_day) >= 1.0]
+    recent_sells = [row for row in sells if _recentness_weight(row.get("posted_at"), reference_day) >= 1.0]
+    weighted_buy = sum(_recentness_weight(row.get("posted_at"), reference_day) for row in buys)
+    weighted_sell = sum(_recentness_weight(row.get("posted_at"), reference_day) for row in sells)
+    if buy_count and not recent_buys:
+        demand_status = "stale_demand"
+    elif buy_count and sell_count == 0:
         demand_status = "hot_demand"
     elif buy_count >= 3 and buy_count > sell_count:
         demand_status = "hot_demand"
@@ -697,24 +759,40 @@ def _card_summary(card_key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
         demand_status = "supply_heavy"
     else:
         demand_status = "unknown"
-    score = round((buy_count * 1.0 * _recentness_factor(rows)) / max(sell_count, 1), 2)
+    score = round(weighted_buy / max(weighted_sell, 1.0), 2)
+    demand_ratio = round(buy_count / max(sell_count, 1), 2)
+    sell_posts = {row.get("source_id") or row.get("post_url") for row in sells}
+    buy_posts = {row.get("source_id") or row.get("post_url") for row in buys}
+    quality_status = "needs_review" if any(row.get("status") == "needs_review" or row.get("listing_type") == "unknown" for row in rows) else "observed"
+    if len(active_sources) < 2 and quality_status == "observed":
+        quality_status = "low_sample"
     latest = max((str(row.get("posted_at") or "") for row in rows), default="")
+    normalized_name = next((normalize_listing_card_label(str(row.get("card_name_raw") or ""), str(row.get("listing_type") or "")) for row in rows if row.get("card_name_raw")), card_key)
     return {
         "card_key": card_key,
         "card_name_raw": next((str(row.get("card_name_raw") or "") for row in rows if row.get("card_name_raw")), card_key),
+        "card_name_normalized": normalized_name,
         "gallery_id": next((row.get("gallery_id") for row in rows if row.get("gallery_id")), ""),
         "sell_count": sell_count,
         "buy_count": buy_count,
         "trade_count": len(trades),
+        "sell_post_count": len({value for value in sell_posts if value}),
+        "buy_post_count": len({value for value in buy_posts if value}),
+        "sell_quantity": sum(max(1, int(row.get("quantity") or 1)) for row in sells),
+        "buy_quantity": sum(max(1, int(row.get("quantity") or 1)) for row in buys),
+        "recent_sell_count": len(recent_sells),
+        "recent_buy_count": len(recent_buys),
         "sell_price_median": _median(sell_prices),
         "sell_price_min": min(sell_prices) if sell_prices else None,
         "sell_price_max": max(sell_prices) if sell_prices else None,
         "wanted_price_median": _median(wanted_prices),
         "active_source_count": len(active_sources),
         "demand_score": score,
+        "demand_ratio": demand_ratio,
         "demand_status": demand_status,
+        "quality_status": quality_status,
         "latest_posted_at": latest,
-        "evidence": f"최근 데이터 구매글 {buy_count}건 / 판매 매물 {sell_count}건",
+        "evidence": f"최근 구매글 {buy_count}건(최근 {len(recent_buys)}건) / 판매 매물 {sell_count}건 / 게시글 {len(active_sources)}개",
     }
 
 
@@ -728,9 +806,29 @@ def _median(values: list[int]) -> int | None:
     return round((ordered[middle - 1] + ordered[middle]) / 2)
 
 
-def _recentness_factor(rows: list[dict[str, Any]]) -> float:
-    """Keep the first score explainable until a time-series model is introduced."""
-    return 1.0 if rows else 0.0
+def _as_date(value: Any) -> date | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            return None
+
+
+def _recentness_weight(value: Any, reference_day: date) -> float:
+    posted_day = _as_date(value)
+    if posted_day is None:
+        return 0.0
+    age = max(0, (reference_day - posted_day).days)
+    if age <= 7:
+        return 1.0
+    if age <= 30:
+        return 0.5
+    return 0.25
 
 
 def _hash_text(value: str) -> str:

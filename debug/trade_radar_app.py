@@ -139,10 +139,10 @@ class TradeRadarApp:
 
         table = ttk.LabelFrame(self.explorer_tab, text="카드별 요약", padding=0)
         table.pack(fill="both", expand=True)
-        columns = ("card", "game", "sell", "buy", "median", "range", "status", "evidence", "latest")
+        columns = ("card", "game", "sell", "buy", "recent", "median", "range", "score", "status", "quality", "evidence", "latest")
         self.card_tree = ttk.Treeview(table, columns=columns, show="headings")
-        headings = {"card": "카드", "game": "게임", "sell": "판매", "buy": "구매", "median": "판매 중앙값", "range": "판매가 범위", "status": "상태", "evidence": "근거", "latest": "최근 등록"}
-        widths = {"card": 210, "game": 130, "sell": 65, "buy": 65, "median": 105, "range": 150, "status": 100, "evidence": 210, "latest": 150}
+        headings = {"card": "카드", "game": "게임", "sell": "판매", "buy": "구매", "median": "판매 중앙값", "range": "판매가 범위", "status": "상태", "evidence": "근거", "latest": "최근 등록", "recent": "최근 구매", "score": "수요 점수", "quality": "품질"}
+        widths = {"card": 210, "game": 130, "sell": 65, "buy": 65, "recent": 75, "median": 105, "range": 150, "score": 80, "status": 100, "quality": 90, "evidence": 210, "latest": 150}
         for column in columns:
             self.card_tree.heading(column, text=headings[column])
             self.card_tree.column(column, width=widths[column], anchor="w" if column in {"card", "game", "range", "status", "evidence", "latest"} else "center")
@@ -199,9 +199,9 @@ class TradeRadarApp:
         ttk.Button(right, text="수요 찾기", style="Primary.TButton", command=self._refresh_inventory).pack(anchor="w")
         table = ttk.LabelFrame(self.inventory_tab, text="구매 수요가 확인된 보유 카드", padding=0)
         table.pack(fill="both", expand=True, pady=(14, 0))
-        columns = ("card", "buy", "sell", "wanted", "score", "status", "evidence")
+        columns = ("card", "buy", "sell", "recent", "wanted", "score", "status", "quality", "evidence")
         self.inventory_tree = ttk.Treeview(table, columns=columns, show="headings")
-        headings = {"card": "카드", "buy": "구매글", "sell": "판매 매물", "wanted": "희망가 중앙값", "score": "수요 점수", "status": "상태", "evidence": "근거"}
+        headings = {"card": "카드", "buy": "구매글", "sell": "판매 매물", "recent": "최근 구매", "wanted": "희망가 중앙값", "score": "수요 점수", "status": "상태", "quality": "품질", "evidence": "근거"}
         for column in columns:
             self.inventory_tree.heading(column, text=headings[column])
             self.inventory_tree.column(column, width=150 if column in {"card", "evidence"} else 100, anchor="w" if column in {"card", "status", "evidence"} else "center")
@@ -223,9 +223,9 @@ class TradeRadarApp:
         self.trend_state.pack(anchor="w", pady=(10, 8))
         table = ttk.LabelFrame(self.trend_tab, text="카드별 동향 스냅샷", padding=0)
         table.pack(fill="both", expand=True)
-        columns = ("date", "card", "sell", "buy", "median", "wanted", "score")
+        columns = ("date", "card", "sell", "buy", "recent", "median", "wanted", "ratio", "score", "quality")
         self.trend_tree = ttk.Treeview(table, columns=columns, show="headings")
-        headings = {"date": "기준일", "card": "카드", "sell": "판매", "buy": "구매", "median": "판매 중앙값", "wanted": "희망가 중앙값", "score": "수요 점수"}
+        headings = {"date": "기준일", "card": "카드", "sell": "판매", "buy": "구매", "recent": "최근 구매", "median": "판매 중앙값", "wanted": "희망가 중앙값", "ratio": "수요 비율", "score": "수요 점수", "quality": "품질"}
         for column in columns:
             self.trend_tree.heading(column, text=headings[column])
             self.trend_tree.column(column, width=150 if column == "card" else 105, anchor="w" if column in {"date", "card"} else "center")
@@ -266,9 +266,9 @@ class TradeRadarApp:
         self.card_tree.delete(*self.card_tree.get_children())
         for index, item in enumerate(summaries):
             self.card_tree.insert("", "end", iid=f"card-{index}", values=(
-                item["card_name_raw"], game_name(item["gallery_id"]), item["sell_count"], item["buy_count"], money(item["sell_price_median"]),
-                f"{money(item['sell_price_min'])} ~ {money(item['sell_price_max'])}", _status_label(item["demand_status"]), item["evidence"], item["latest_posted_at"],
-            ), tags=(item["card_key"], item["gallery_id"], {"hot_demand": "hot", "balanced": "balanced", "supply_heavy": "supply"}.get(item["demand_status"], "")))
+                item["card_name_normalized"] or item["card_name_raw"], game_name(item["gallery_id"]), item["sell_count"], item["buy_count"], item["recent_buy_count"], money(item["sell_price_median"]),
+                f"{money(item['sell_price_min'])} ~ {money(item['sell_price_max'])}", item["demand_score"], _status_label(item["demand_status"]), _quality_label(item["quality_status"]), item["evidence"], item["latest_posted_at"],
+            ), tags=(item["card_key"], item["gallery_id"], {"hot_demand": "hot", "balanced": "balanced", "supply_heavy": "supply", "stale_demand": "supply"}.get(item["demand_status"], "")))
         self.card_metric.set(str(len(summaries)))
         self.demand_metric.set(str(sum(1 for item in summaries if item["buy_count"] > 0)))
         self.supply_metric.set(str(sum(item["sell_count"] for item in summaries)))
@@ -283,7 +283,7 @@ class TradeRadarApp:
         if not tags:
             return
         card_key, game_id = tags[0], tags[1]
-        rows = self.repo.list_market_listings(query_text=card_key, game_id=game_id, since=self._market_filters()["since"], until=self._market_filters()["until"], limit=500)
+        rows = self.repo.list_card_listings(card_key, game_id=game_id, since=self._market_filters()["since"], until=self._market_filters()["until"], limit=500)
         dialog = tk.Toplevel(self.root)
         dialog.title(f"{item['values'][0]} · 매물과 수요")
         dialog.geometry("1050x520")
@@ -312,9 +312,9 @@ class TradeRadarApp:
             return
         with open(target, "w", encoding="utf-8-sig", newline="") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["카드", "게임", "판매 매물 수", "구매글 수", "판매 중앙값", "희망가 중앙값", "수요 상태", "수요 점수", "근거"])
+            writer.writerow(["카드", "정규화 카드명", "게임", "판매 매물 수", "구매글 수", "최근 구매", "판매 중앙값", "희망가 중앙값", "수요 상태", "수요 점수", "품질", "근거"])
             for item in summaries:
-                writer.writerow([item["card_name_raw"], game_name(item["gallery_id"]), item["sell_count"], item["buy_count"], item["sell_price_median"], item["wanted_price_median"], _status_label(item["demand_status"]), item["demand_score"], item["evidence"]])
+                writer.writerow([item["card_name_raw"], item["card_name_normalized"], game_name(item["gallery_id"]), item["sell_count"], item["buy_count"], item["recent_buy_count"], item["sell_price_median"], item["wanted_price_median"], _status_label(item["demand_status"]), item["demand_score"], _quality_label(item["quality_status"]), item["evidence"]])
 
     def _refresh_inventory(self) -> None:
         names = [line.strip() for line in self.inventory_text.get("1.0", "end").splitlines() if line.strip()]
@@ -325,14 +325,14 @@ class TradeRadarApp:
             cards = self.repo.summarize_cards(query_text=name, game_id=game_id, since=period(30)[0], until=period(30)[1], limit=20)
             matched.extend(item for item in cards if item["buy_count"] > 0)
         for item in matched:
-            self.inventory_tree.insert("", "end", values=(item["card_name_raw"], item["buy_count"], item["sell_count"], money(item["wanted_price_median"]), item["demand_score"], _status_label(item["demand_status"]), item["evidence"]))
+            self.inventory_tree.insert("", "end", values=(item["card_name_normalized"] or item["card_name_raw"], item["buy_count"], item["sell_count"], item["recent_buy_count"], money(item["wanted_price_median"]), item["demand_score"], _status_label(item["demand_status"]), _quality_label(item["quality_status"]), item["evidence"]))
 
     def _refresh_trends(self) -> None:
         game_id = self._selected_game_id(self.trend_game.get())
         snapshots = self.repo.list_demand_snapshots(game_id=game_id, limit=500)
         self.trend_tree.delete(*self.trend_tree.get_children())
         for item in snapshots:
-            self.trend_tree.insert("", "end", values=(item["snapshot_date"], item["card_name_raw"], item["sell_count"], item["buy_count"], money(item["sell_price_median"]), money(item["wanted_price_median"]), item["demand_score"]))
+            self.trend_tree.insert("", "end", values=(item["snapshot_date"], item.get("card_name_normalized") or item["card_name_raw"], item["sell_count"], item["buy_count"], item.get("recent_buy_count", 0), money(item["sell_price_median"]), money(item["wanted_price_median"]), item.get("demand_ratio", 0), item["demand_score"], _quality_label(item.get("quality_status", "needs_review"))))
         self.trend_state.configure(text=f"{game_name(game_id)} · 스냅샷 {len(snapshots)}개")
 
     def _create_snapshot(self) -> None:
@@ -430,6 +430,10 @@ def _author_type_label(value: str) -> str:
 
 def _status_label(value: str) -> str:
     return {"hot_demand": "구매 수요 있음", "balanced": "균형", "supply_heavy": "매물 우세", "stale_demand": "오래된 수요", "unknown": "확인 필요"}.get(value, "확인 필요")
+
+
+def _quality_label(value: str) -> str:
+    return {"observed": "관측", "low_sample": "표본 적음", "needs_review": "검토 필요"}.get(value, "검토 필요")
 
 
 def main() -> None:

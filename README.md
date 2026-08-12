@@ -111,3 +111,5 @@ migrations/         SQLite 스키마
 - `GET /market/snapshots`: 일별 동향 스냅샷
 - `POST /market/snapshots`: 현재 수집 데이터로 스냅샷 생성
 - `GET /jobs/{id}/comments`: 작업에 포함된 댓글 목록
+
+카드 요약에는 원문 카드명과 별도로 거래 표현·수량·가격 꼬리표를 제거한 `card_name_normalized`가 포함됩니다. `sell_count`·`buy_count`는 매물 행 수, `sell_post_count`·`buy_post_count`는 게시글 수이며, `recent_buy_count`와 `demand_score`로 최근 수요를 구분합니다. `quality_status=needs_review`인 항목은 원문을 확인한 뒤 해석해야 합니다.

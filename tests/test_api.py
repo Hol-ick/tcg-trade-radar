@@ -67,6 +67,8 @@ class ApiTests(unittest.TestCase):
         self.assertFalse(rows.body["rows"][0]["exportable"])
         self.assertEqual(cards.status, 200)
         self.assertEqual(cards.body["cards"][0]["sell_count"], 1)
+        self.assertIn("demand_ratio", cards.body["cards"][0])
+        self.assertIn("quality_status", cards.body["cards"][0])
         self.assertEqual(listings.status, 200)
         self.assertEqual(len(listings.body["rows"]), 1)
 
