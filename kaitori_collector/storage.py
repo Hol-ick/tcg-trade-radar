@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS kaitori_sources (
   raw_html TEXT,
   fetched_at TEXT NOT NULL,
   content_hash TEXT NOT NULL,
+  source_status TEXT NOT NULL DEFAULT 'active',
   UNIQUE (post_url, content_hash)
 );
 
@@ -61,6 +62,11 @@ CREATE TABLE IF NOT EXISTS kaitori_rows (
   status TEXT NOT NULL CHECK (status IN ('raw', 'parsed', 'needs_review', 'approved', 'rejected', 'exported')),
   review_reason TEXT NOT NULL DEFAULT '',
   raw_line TEXT NOT NULL DEFAULT '',
+  listing_type TEXT NOT NULL DEFAULT 'unknown',
+  intent_confidence REAL NOT NULL DEFAULT 0,
+  price_type TEXT NOT NULL DEFAULT 'unknown',
+  set_name TEXT NOT NULL DEFAULT '',
+  condition_raw TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (source_id, row_fingerprint)
@@ -113,6 +119,27 @@ CREATE INDEX IF NOT EXISTS kaitori_rows_job_status_idx ON kaitori_rows(job_id, s
 CREATE INDEX IF NOT EXISTS kaitori_reviews_row_idx ON kaitori_reviews(row_id, id);
 CREATE INDEX IF NOT EXISTS kaitori_job_rows_status_idx ON kaitori_job_rows(job_id, row_id);
 CREATE INDEX IF NOT EXISTS kaitori_job_logs_job_idx ON kaitori_job_logs(job_id, id);
+
+CREATE TABLE IF NOT EXISTS kaitori_demand_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_date TEXT NOT NULL,
+  game_id TEXT NOT NULL,
+  card_key TEXT NOT NULL,
+  card_name_raw TEXT NOT NULL DEFAULT '',
+  sell_count INTEGER NOT NULL DEFAULT 0,
+  buy_count INTEGER NOT NULL DEFAULT 0,
+  trade_count INTEGER NOT NULL DEFAULT 0,
+  sell_price_median INTEGER,
+  sell_price_min INTEGER,
+  sell_price_max INTEGER,
+  wanted_price_median INTEGER,
+  active_source_count INTEGER NOT NULL DEFAULT 0,
+  demand_score REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  UNIQUE(snapshot_date, game_id, card_key)
+);
+
+CREATE INDEX IF NOT EXISTS kaitori_snapshot_game_date_idx ON kaitori_demand_snapshots(game_id, snapshot_date);
 """
 
 
@@ -126,7 +153,24 @@ class Repository:
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA journal_mode = WAL")
         self.connection.executescript(SCHEMA_SQL)
+        self._ensure_market_columns()
         self.connection.commit()
+
+    def _ensure_market_columns(self) -> None:
+        existing = {row[1] for row in self.connection.execute("PRAGMA table_info(kaitori_rows)").fetchall()}
+        additions = {
+            "listing_type": "TEXT NOT NULL DEFAULT 'unknown'",
+            "intent_confidence": "REAL NOT NULL DEFAULT 0",
+            "price_type": "TEXT NOT NULL DEFAULT 'unknown'",
+            "set_name": "TEXT NOT NULL DEFAULT ''",
+            "condition_raw": "TEXT NOT NULL DEFAULT ''",
+        }
+        for column, definition in additions.items():
+            if column not in existing:
+                self.connection.execute(f"ALTER TABLE kaitori_rows ADD COLUMN {column} {definition}")
+        source_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(kaitori_sources)").fetchall()}
+        if "source_status" not in source_columns:
+            self.connection.execute("ALTER TABLE kaitori_sources ADD COLUMN source_status TEXT NOT NULL DEFAULT 'active'")
 
     def close(self) -> None:
         self.connection.close()
@@ -150,7 +194,7 @@ class Repository:
                 json.dumps(_empty_counts()),
                 now,
                 __version__,
-                json.dumps({"gallery_url": request.gallery_url, "max_posts": request.max_posts, "max_pages": request.max_pages, "delay": request.delay, "keep_raw": request.keep_raw, "review_unmatched": request.review_unmatched}),
+                json.dumps({"gallery_url": request.gallery_url, "max_posts": request.max_posts, "max_pages": request.max_pages, "delay": request.delay, "keep_raw": request.keep_raw, "review_unmatched": request.review_unmatched, "subjects": list(request.subjects)}, ensure_ascii=False),
             ),
         )
         self.connection.commit()
@@ -246,11 +290,12 @@ class Repository:
             raw_html if source.get("keep_raw", True) else None,
             str(source.get("fetched_at") or utc_now()),
             content_hash,
+            str(source.get("source_status") or "active"),
         )
         cursor = self.connection.execute(
             """INSERT OR IGNORE INTO kaitori_sources
-            (id, gallery_id, post_id, post_url, title, posted_at, raw_html, fetched_at, content_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, gallery_id, post_id, post_url, title, posted_at, raw_html, fetched_at, content_hash, source_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             values,
         )
         self.connection.commit()
@@ -279,6 +324,8 @@ class Repository:
                 "raw_price": public["raw_price"],
                 "quantity": public["quantity"],
                 "shipping_included": public["shipping_included"],
+                "listing_type": public["listing_type"],
+                "price_type": public["price_type"],
                 "raw_line": public["raw_line"],
             }, ensure_ascii=False, sort_keys=True))
             row_id = _hash_text(f"{source_id}:{fingerprint}")[:24]
@@ -286,8 +333,9 @@ class Repository:
                 """INSERT OR IGNORE INTO kaitori_rows
                 (id, job_id, source_id, row_fingerprint, card_name_raw, rarity, raw_price,
                  price_krw, price_unit, quantity, shipping_included, shipping_price_krw,
-                 status, review_reason, raw_line, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 status, review_reason, raw_line, listing_type, intent_confidence, price_type,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     row_id,
                     job_id,
@@ -304,6 +352,9 @@ class Repository:
                     public["review_status"] if public["review_status"] in {"parsed", "needs_review"} else "needs_review",
                     public["review_reason"],
                     public["raw_line"],
+                    public["listing_type"],
+                    float(public["intent_confidence"] or 0),
+                    public["price_type"],
                     now,
                     now,
                 ),
@@ -334,6 +385,118 @@ class Repository:
             query += " AND r.status = ?"
             values.append(status)
         query += " GROUP BY r.id ORDER BY r.created_at, r.id"
+        return [dict(row) for row in self.connection.execute(query, values).fetchall()]
+
+    def list_market_listings(
+        self,
+        *,
+        query_text: str = "",
+        game_id: str = "",
+        listing_type: str = "",
+        since: str | None = None,
+        until: str | None = None,
+        min_price: int | None = None,
+        max_price: int | None = None,
+        status: str = "",
+        sort: str = "recent",
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        query = """SELECT DISTINCT r.*, s.gallery_id, s.post_url, s.title AS post_title,
+                   s.posted_at, s.source_status
+                   FROM kaitori_rows r
+                   JOIN kaitori_sources s ON s.id = r.source_id
+                   WHERE 1=1"""
+        values: list[Any] = []
+        if game_id:
+            query += " AND s.gallery_id = ?"
+            values.append(game_id)
+        if listing_type in {"sell", "buy", "trade", "unknown"}:
+            query += " AND r.listing_type = ?"
+            values.append(listing_type)
+        if query_text.strip():
+            query += " AND (r.card_name_raw LIKE ? OR r.card_code LIKE ? OR s.title LIKE ?)"
+            term = f"%{query_text.strip()}%"
+            values.extend([term, term, term])
+        if since:
+            query += " AND substr(s.posted_at, 1, 10) >= ?"
+            values.append(since[:10])
+        if until:
+            query += " AND substr(s.posted_at, 1, 10) <= ?"
+            values.append(until[:10])
+        if min_price is not None:
+            query += " AND r.price_krw >= ?"
+            values.append(min_price)
+        if max_price is not None:
+            query += " AND r.price_krw <= ?"
+            values.append(max_price)
+        if status:
+            query += " AND r.status = ?"
+            values.append(status)
+        order = {
+            "price_asc": "r.price_krw ASC, s.posted_at DESC",
+            "price_desc": "r.price_krw DESC, s.posted_at DESC",
+            "demand": "r.intent_confidence DESC, s.posted_at DESC",
+            "recent": "s.posted_at DESC, r.created_at DESC",
+        }.get(sort, "s.posted_at DESC, r.created_at DESC")
+        query += f" ORDER BY {order} LIMIT ?"
+        values.append(max(1, min(int(limit), 1000)))
+        return [dict(row) for row in self.connection.execute(query, values).fetchall()]
+
+    def summarize_cards(
+        self,
+        *,
+        query_text: str = "",
+        game_id: str = "",
+        listing_type: str = "",
+        since: str | None = None,
+        until: str | None = None,
+        sort: str = "demand",
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        rows = self.list_market_listings(query_text=query_text, game_id=game_id, listing_type=listing_type, since=since, until=until, limit=5000)
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            key = str(row.get("card_code") or row.get("card_name_raw") or "").strip()
+            if key:
+                groups.setdefault(key, []).append(row)
+        result = [_card_summary(key, values) for key, values in groups.items()]
+        if sort == "recent":
+            result.sort(key=lambda item: item["latest_posted_at"], reverse=True)
+        elif sort == "price_asc":
+            result.sort(key=lambda item: item["sell_price_median"] if item["sell_price_median"] is not None else 10**12)
+        elif sort == "price_desc":
+            result.sort(key=lambda item: item["sell_price_median"] if item["sell_price_median"] is not None else -1, reverse=True)
+        else:
+            result.sort(key=lambda item: (-item["demand_score"], -item["buy_count"], item["card_name_raw"]))
+        return result[: max(1, min(int(limit), 500))]
+
+    def refresh_demand_snapshot(self, snapshot_date: str, game_id: str, *, since: str | None = None, until: str | None = None) -> int:
+        summaries = self.summarize_cards(game_id=game_id, since=since, until=until, limit=500)
+        for summary in summaries:
+            self.connection.execute(
+                """INSERT OR REPLACE INTO kaitori_demand_snapshots
+                (snapshot_date, game_id, card_key, card_name_raw, sell_count, buy_count, trade_count,
+                 sell_price_median, sell_price_min, sell_price_max, wanted_price_median,
+                 active_source_count, demand_score, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (snapshot_date, game_id, summary["card_key"], summary["card_name_raw"], summary["sell_count"], summary["buy_count"], summary["trade_count"],
+                 summary["sell_price_median"], summary["sell_price_min"], summary["sell_price_max"], summary["wanted_price_median"],
+                 summary["active_source_count"], summary["demand_score"], utc_now()),
+            )
+        self.connection.commit()
+        return len(summaries)
+
+    def list_demand_snapshots(self, *, game_id: str = "", card_key: str = "", limit: int = 365) -> list[dict[str, Any]]:
+        query = "SELECT * FROM kaitori_demand_snapshots WHERE 1=1"
+        values: list[Any] = []
+        if game_id:
+            query += " AND game_id = ?"
+            values.append(game_id)
+        if card_key:
+            query += " AND card_key = ?"
+            values.append(card_key)
+        query += " ORDER BY snapshot_date DESC, demand_score DESC LIMIT ?"
+        values.append(max(1, min(int(limit), 1000)))
         return [dict(row) for row in self.connection.execute(query, values).fetchall()]
 
     def get_row(self, row_id: str) -> dict[str, Any] | None:
@@ -433,12 +596,72 @@ class Repository:
             FROM kaitori_rows r JOIN kaitori_job_rows jr ON jr.row_id = r.id
             WHERE jr.job_id = ? GROUP BY r.status""", (job_id,)).fetchall():
             counts[row["status"]] = int(row["count"])
+        for row in self.connection.execute("""SELECT r.listing_type, COUNT(*) AS count
+            FROM kaitori_rows r JOIN kaitori_job_rows jr ON jr.row_id = r.id
+            WHERE jr.job_id = ? GROUP BY r.listing_type""", (job_id,)).fetchall():
+            if row["listing_type"] in {"sell", "buy", "trade", "unknown"}:
+                counts[row["listing_type"]] = int(row["count"])
         counts["rows"] = sum(value for key, value in counts.items() if key in {"parsed", "needs_review", "approved", "rejected", "exported"})
         return counts
 
 
 def _empty_counts() -> dict[str, int]:
-    return {"sources": 0, "rows": 0, "parsed": 0, "needs_review": 0, "approved": 0, "rejected": 0, "exported": 0}
+    return {"sources": 0, "rows": 0, "parsed": 0, "needs_review": 0, "approved": 0, "rejected": 0, "exported": 0, "sell": 0, "buy": 0, "trade": 0, "unknown": 0}
+
+
+def _card_summary(card_key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    sells = [row for row in rows if row.get("listing_type") == "sell"]
+    buys = [row for row in rows if row.get("listing_type") == "buy"]
+    trades = [row for row in rows if row.get("listing_type") == "trade"]
+    sell_prices = [int(row.get("price_krw") or 0) for row in sells if int(row.get("price_krw") or 0) > 0]
+    wanted_prices = [int(row.get("price_krw") or 0) for row in buys if int(row.get("price_krw") or 0) > 0]
+    active_sources = {row.get("source_id") for row in rows if row.get("source_id")}
+    buy_count = len(buys)
+    sell_count = len(sells)
+    if buy_count and sell_count == 0:
+        demand_status = "hot_demand"
+    elif buy_count >= 3 and buy_count > sell_count:
+        demand_status = "hot_demand"
+    elif buy_count and sell_count:
+        demand_status = "balanced"
+    elif sell_count:
+        demand_status = "supply_heavy"
+    else:
+        demand_status = "unknown"
+    score = round((buy_count * 1.0 * _recentness_factor(rows)) / max(sell_count, 1), 2)
+    latest = max((str(row.get("posted_at") or "") for row in rows), default="")
+    return {
+        "card_key": card_key,
+        "card_name_raw": next((str(row.get("card_name_raw") or "") for row in rows if row.get("card_name_raw")), card_key),
+        "gallery_id": next((row.get("gallery_id") for row in rows if row.get("gallery_id")), ""),
+        "sell_count": sell_count,
+        "buy_count": buy_count,
+        "trade_count": len(trades),
+        "sell_price_median": _median(sell_prices),
+        "sell_price_min": min(sell_prices) if sell_prices else None,
+        "sell_price_max": max(sell_prices) if sell_prices else None,
+        "wanted_price_median": _median(wanted_prices),
+        "active_source_count": len(active_sources),
+        "demand_score": score,
+        "demand_status": demand_status,
+        "latest_posted_at": latest,
+        "evidence": f"최근 데이터 구매글 {buy_count}건 / 판매 매물 {sell_count}건",
+    }
+
+
+def _median(values: list[int]) -> int | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return round((ordered[middle - 1] + ordered[middle]) / 2)
+
+
+def _recentness_factor(rows: list[dict[str, Any]]) -> float:
+    """Keep the first score explainable until a time-series model is introduced."""
+    return 1.0 if rows else 0.0
 
 
 def _hash_text(value: str) -> str:

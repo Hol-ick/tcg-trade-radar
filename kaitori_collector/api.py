@@ -49,6 +49,28 @@ class WorkerApplication:
             job_id = self.service.create_job(request, start=self.start_jobs)
             return ApiResponse(202, {"job_id": job_id, "id": job_id})
 
+        if route == "/market/listings" and method == "GET":
+            return ApiResponse(200, {"rows": self.service.get_market_listings(**_market_filters(query))})
+        if route == "/market/cards" and method == "GET":
+            filters = _market_filters(query)
+            filters.pop("min_price", None)
+            filters.pop("max_price", None)
+            filters.pop("status", None)
+            return ApiResponse(200, {"cards": self.service.get_market_cards(**filters)})
+        if route == "/market/snapshots" and method == "GET":
+            return ApiResponse(200, {"snapshots": self.service.get_demand_snapshots(
+                game_id=_query_value(query, "game_id"),
+                card_key=_query_value(query, "card_key"),
+                limit=int(_query_value(query, "limit") or 365),
+            )})
+        if route == "/market/snapshots" and method == "POST":
+            game_id = str(payload.get("game_id") or "").strip()
+            snapshot_date = str(payload.get("snapshot_date") or "").strip()
+            if not game_id or not snapshot_date:
+                raise ValueError("game_id and snapshot_date are required")
+            count = self.service.repository.refresh_demand_snapshot(snapshot_date, game_id, since=payload.get("since"), until=payload.get("until"))
+            return ApiResponse(201, {"game_id": game_id, "snapshot_date": snapshot_date, "count": count})
+
         parts = [part for part in route.split("/") if part]
         if len(parts) == 2 and parts[0] == "jobs" and method == "GET":
             return ApiResponse(200, self.service.get_job_status(parts[1]))
@@ -72,3 +94,26 @@ class WorkerApplication:
         if not self.api_token:
             return True
         return headers.get("authorization", "") == f"Bearer {self.api_token}"
+
+
+def _query_value(query: dict[str, list[str]], key: str) -> str:
+    return str(query.get(key, [""])[0] or "").strip()
+
+
+def _market_filters(query: dict[str, list[str]]) -> dict[str, Any]:
+    def optional_int(key: str) -> int | None:
+        value = _query_value(query, key)
+        return int(value) if value else None
+
+    return {
+        "query_text": _query_value(query, "q"),
+        "game_id": _query_value(query, "game_id"),
+        "listing_type": _query_value(query, "listing_type"),
+        "since": _query_value(query, "since") or None,
+        "until": _query_value(query, "until") or None,
+        "min_price": optional_int("min_price"),
+        "max_price": optional_int("max_price"),
+        "status": _query_value(query, "status"),
+        "sort": _query_value(query, "sort") or "recent",
+        "limit": int(_query_value(query, "limit") or 200),
+    }

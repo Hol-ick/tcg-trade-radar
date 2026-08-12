@@ -28,11 +28,11 @@ from kaitori_collector.storage import Repository
 
 
 PRESETS = [
-    {"name": "유희왕", "id": "tcggame", "subject": "판매", "url": "https://gall.dcinside.com/mgallery/board/lists?id=tcggame"},
-    {"name": "원피스 카드게임", "id": "onepiececardgame", "subject": "판매", "url": "https://gall.dcinside.com/mgallery/board/lists?id=onepiececardgame"},
-    {"name": "포켓몬 카드게임", "id": "pokemoncardgame", "subject": "🔁거래", "url": "https://gall.dcinside.com/mgallery/board/lists?id=pokemoncardgame"},
-    {"name": "디지몬 카드게임", "id": "digimontcg", "subject": "거래", "url": "https://gall.dcinside.com/mgallery/board/lists?id=digimontcg"},
-    {"name": "뱅가드", "id": "vg", "subject": "거래", "url": "https://gall.dcinside.com/mgallery/board/lists?id=vg"},
+    {"name": "유희왕", "id": "tcggame", "subject": "판매", "subjects": ("판매", "구매", "거래", "🔁거래"), "url": "https://gall.dcinside.com/mgallery/board/lists?id=tcggame"},
+    {"name": "원피스 카드게임", "id": "onepiececardgame", "subject": "판매", "subjects": ("판매", "구매", "거래", "🔁거래"), "url": "https://gall.dcinside.com/mgallery/board/lists?id=onepiececardgame"},
+    {"name": "포켓몬 카드게임", "id": "pokemoncardgame", "subject": "🔁거래", "subjects": ("판매", "구매", "거래", "🔁거래"), "url": "https://gall.dcinside.com/mgallery/board/lists?id=pokemoncardgame"},
+    {"name": "디지몬 카드게임", "id": "digimontcg", "subject": "거래", "subjects": ("판매", "구매", "거래", "🔁거래"), "url": "https://gall.dcinside.com/mgallery/board/lists?id=digimontcg"},
+    {"name": "뱅가드", "id": "vg", "subject": "거래", "subjects": ("판매", "구매", "거래", "🔁거래"), "url": "https://gall.dcinside.com/mgallery/board/lists?id=vg"},
 ]
 
 COLLECTION_DAYS = 7
@@ -233,6 +233,7 @@ class KaitoriApp:
             gallery_id=game["id"],
             gallery_url=game["url"],
             subject=game["subject"],
+            subjects=game.get("subjects", ()),
             since=collection_period()[0],
             until=collection_period()[1],
             max_posts=max_posts,

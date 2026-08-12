@@ -84,6 +84,20 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(len([url for url in calls if "view" in url]), 1)
 
+    def test_price_less_buy_post_is_preserved_as_demand_sample(self):
+        html = """
+        <html><head><script type="application/ld+json">
+        {"headline":"블루아이즈 구해요","datePublished":"2026-08-12","articleBody":"블루아이즈 상태 좋은 카드 찾습니다"}
+        </script></head><body><span class="title_subject">블루아이즈 구해요</span><div class="write_div">상태 좋은 카드 찾습니다</div></body></html>
+        """
+
+        rows = extract_post(html, "https://example.test/post/buy", "tcggame", "거래")
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].listing_type, "buy")
+        self.assertEqual(rows[0].price_krw, 0)
+        self.assertEqual(rows[0].review_reason, "희망가 미기재")
+
 
 if __name__ == "__main__":
     unittest.main()

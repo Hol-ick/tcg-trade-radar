@@ -39,6 +39,7 @@ class JobService:
             raise KeyError(f"job not found: {job_id}")
         request = _request_from_job(job)
         self.repository.update_job(job_id, state="running", error_message="")
+        subjects = request.subjects or (request.subject,)
         self._log(
             job_id,
             step="job",
@@ -46,7 +47,7 @@ class JobService:
             details={
                 "gallery_id": request.gallery_id,
                 "gallery_url": request.gallery_url,
-                "subject": request.subject,
+                "subjects": subjects,
                 "max_posts": request.max_posts,
                 "max_pages": request.max_pages,
             },
@@ -65,13 +66,13 @@ class JobService:
                 candidates = [
                     urljoin(list_url, item["href"])
                     for item in all_rows
-                    if normalize_space(item.get("subject", "")) == request.subject and item.get("href")
+                    if normalize_space(item.get("subject", "")) in subjects and item.get("href")
                 ]
                 self._log(
                     job_id,
                     step="list",
-                    message=f"목록 파싱 완료 · 전체 {len(all_rows)}개 / {request.subject} {len(candidates)}개",
-                    details={"page": page, "all_rows": len(all_rows), "matching_rows": len(candidates)},
+                    message=f"목록 파싱 완료 · 전체 {len(all_rows)}개 / {', '.join(subjects)} {len(candidates)}개",
+                    details={"page": page, "all_rows": len(all_rows), "matching_rows": len(candidates), "subjects": subjects},
                 )
                 if not all_rows:
                     self._log(
@@ -84,7 +85,7 @@ class JobService:
                     if page == 1:
                         raise RuntimeError("목록 글 행을 찾지 못했습니다. 요청 차단 또는 HTML 구조 변경 가능성이 있습니다.")
                 elif not candidates:
-                    self._log(job_id, step="list", message=f"{request.subject} 말머리 글이 없음", details={"page": page})
+                    self._log(job_id, step="list", message=f"{', '.join(subjects)} 말머리 글이 없음", details={"page": page})
                 for post_url in candidates:
                     if post_url in seen_urls or posts_seen >= request.max_posts:
                         continue
@@ -94,7 +95,7 @@ class JobService:
                     post_html = self.fetcher(post_url)
                     self._log(job_id, step="post", message=f"게시글 응답 수신 · {len(post_html):,}자", details={"url": post_url, "characters": len(post_html)})
                     document, _ = parse_html(post_html, post_url)
-                    extracted_rows = extract_post(post_html, post_url, request.gallery_id)
+                    extracted_rows = extract_post(post_html, post_url, request.gallery_id, normalize_space(request.subject))
                     self._log(
                         job_id,
                         step="parse",
@@ -140,6 +141,10 @@ class JobService:
                     self.sleep(request.delay)
             completed_at = utc_now()
             self.repository.update_job(job_id, state="completed", error_message="", finished_at=completed_at, last_success_at=completed_at)
+            snapshot_count = self.repository.refresh_demand_snapshot(
+                completed_at[:10], request.gallery_id, since=request.since, until=request.until
+            )
+            self._log(job_id, step="snapshot", message=f"카드 수요 스냅샷 갱신 · {snapshot_count}개", details={"game_id": request.gallery_id, "count": snapshot_count})
             status = self.get_job_status(job_id)
             self._log(job_id, step="done", message=f"작업 완료 · 게시글 {posts_seen}개 / 결과 {status['counts']['rows']}개", details={"counts": status["counts"]})
         except Exception as exc:
@@ -184,6 +189,8 @@ class JobService:
             item["review_status"] = item["status"]
             item["source_url"] = item["post_url"]
             item["buy_price_krw"] = round(item["price_krw"] * job["buy_rate"] / 100)
+            item["listing_type"] = item.get("listing_type") or "unknown"
+            item["price_type"] = item.get("price_type") or "unknown"
             item["exportable"] = item["status"] in {"approved", "exported"}
             result.append(item)
         return result
@@ -192,6 +199,15 @@ class JobService:
         if self.repository.get_job(job_id) is None:
             raise KeyError(f"job not found: {job_id}")
         return self.repository.list_job_logs(job_id, limit=limit)
+
+    def get_market_listings(self, **filters: Any) -> list[dict[str, Any]]:
+        return self.repository.list_market_listings(**filters)
+
+    def get_market_cards(self, **filters: Any) -> list[dict[str, Any]]:
+        return self.repository.summarize_cards(**filters)
+
+    def get_demand_snapshots(self, **filters: Any) -> list[dict[str, Any]]:
+        return self.repository.list_demand_snapshots(**filters)
 
     def review_row(self, row_id: str, action: ReviewAction) -> dict[str, Any]:
         return self.repository.record_review(row_id, action)
@@ -246,6 +262,7 @@ def _request_from_job(job: dict[str, Any]) -> JobRequest:
     return JobRequest.from_dict({
         "gallery_id": job["gallery_id"],
         "subject": job["subject"],
+        "subjects": config.get("subjects") or [],
         "since": job["since"],
         "until": job["until"],
         "buy_rate": job["buy_rate"],

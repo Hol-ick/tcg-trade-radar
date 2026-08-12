@@ -81,6 +81,50 @@
 }
 ```
 
+## `GET /market/listings`
+
+매물 탐색용 원문 단위 결과를 반환한다. 인증이 설정된 서버에서는 기존 작업 API와 같은 Bearer 토큰이 필요하다.
+
+지원 쿼리: `q`, `game_id`, `listing_type=sell|buy|trade|unknown`, `since`, `until`, `min_price`, `max_price`, `status`, `sort=recent|price_asc|price_desc|demand`, `limit`.
+
+```json
+{
+  "rows": [
+    {
+      "card_name_raw": "블루아이즈",
+      "listing_type": "buy",
+      "price_type": "wanted",
+      "price_krw": 30000,
+      "intent_confidence": 0.84,
+      "post_url": "https://..."
+    }
+  ]
+}
+```
+
+## `GET /market/cards`
+
+카드별 판매·구매 표본을 집계한다. `q`, `game_id`, `listing_type`, `since`, `until`, `sort`, `limit`을 지원한다.
+
+```json
+{
+  "cards": [
+    {
+      "card_key": "블루아이즈",
+      "sell_count": 2,
+      "buy_count": 6,
+      "sell_price_median": 31000,
+      "wanted_price_median": 29000,
+      "demand_status": "hot_demand",
+      "demand_score": 3.0,
+      "evidence": "최근 데이터 구매글 6건 / 판매 매물 2건"
+    }
+  ]
+}
+```
+
+가격이 없는 구매글도 `buy_count`와 수요 표본에는 포함되며 `wanted_price_median`은 `null`일 수 있다.
+
 ## `POST /rows/:id/review`
 
 ```json

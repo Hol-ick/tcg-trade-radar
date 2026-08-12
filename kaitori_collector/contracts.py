@@ -9,6 +9,8 @@ from typing import Any, Literal
 ShippingIncluded = Literal["included", "separate", "unknown"]
 RowStatus = Literal["raw", "parsed", "needs_review", "approved", "rejected", "exported"]
 JobState = Literal["queued", "running", "completed", "failed"]
+ListingType = Literal["sell", "buy", "trade", "unknown"]
+PriceType = Literal["asking", "wanted", "unknown"]
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,9 @@ class ExtractedRow:
     review_status: str
     review_reason: str
     raw_line: str
+    listing_type: ListingType = "unknown"
+    intent_confidence: float = 0.0
+    price_type: PriceType = "unknown"
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,7 @@ class JobRequest:
     gallery_id: str
     gallery_url: str = ""
     subject: str = "판매"
+    subjects: tuple[str, ...] = ()
     since: str | None = None
     until: str | None = None
     max_posts: int = 20
@@ -57,6 +63,7 @@ class JobRequest:
             gallery_id=gallery_id,
             gallery_url=str(payload.get("gallery_url") or "").strip(),
             subject=str(payload.get("subject") or "판매").strip() or "판매",
+            subjects=_as_subjects(payload.get("subjects")),
             since=_optional_text(payload.get("since")),
             until=_optional_text(payload.get("until")),
             max_posts=_as_int(payload.get("max_posts"), 20),
@@ -72,6 +79,8 @@ class JobRequest:
     def validate(self) -> None:
         if not self.gallery_id:
             raise ValueError("gallery_id is required")
+        if any(not subject.strip() for subject in self.subjects):
+            raise ValueError("subjects must contain non-empty strings")
         if not 1 <= self.max_posts <= 200:
             raise ValueError("max_posts must be between 1 and 200")
         if not 1 <= self.max_pages <= 20:
@@ -171,3 +180,15 @@ def _as_bool(value: Any, default: bool) -> bool:
         if lowered in {"false", "0", "no"}:
             return False
     raise ValueError(f"expected boolean, got {value!r}")
+
+
+def _as_subjects(value: Any) -> tuple[str, ...]:
+    if value in (None, ""):
+        return ()
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        values = list(value)
+    else:
+        raise ValueError("subjects must be a list or string")
+    return tuple(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))

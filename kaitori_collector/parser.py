@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from .contracts import ExtractedRow, to_public_row
 from .html import DCInsideHTMLParser, normalize_space, parse_html
+from .intent import classify_listing
 
 
 DEFAULT_USER_AGENT = (
@@ -144,11 +145,12 @@ def parse_sale_line(
     }
 
 
-def extract_post(html: str, url: str, gallery_id: str) -> list[ExtractedRow]:
+def extract_post(html: str, url: str, gallery_id: str, subject: str = "") -> list[ExtractedRow]:
     document, _ = parse_html(html, url)
     body = document["body"]
     default_shipping = infer_default_shipping(body)
     shipping_price = parse_shipping_price(body)
+    intent = classify_listing(document["title"], body, subject)
     rows: list[ExtractedRow] = []
     for line in body.splitlines():
         parsed = parse_sale_line(line, default_shipping, shipping_price)
@@ -159,11 +161,49 @@ def extract_post(html: str, url: str, gallery_id: str) -> list[ExtractedRow]:
             post_title=document["title"],
             post_url=document["url"],
             posted_at=document["posted_at"],
+            listing_type=intent.listing_type,
+            intent_confidence=intent.confidence,
+            price_type=intent.price_type,
             **parsed,
         ))
+    if not rows and intent.listing_type == "buy":
+        card_name = _buy_card_label(document["title"], body)
+        if card_name:
+            rows.append(ExtractedRow(
+                gallery_id=gallery_id,
+                post_title=document["title"],
+                post_url=document["url"],
+                posted_at=document["posted_at"],
+                card_name=card_name,
+                rarity="",
+                raw_price="",
+                price_krw=0,
+                price_unit="미기재",
+                quantity=_buy_quantity(body),
+                shipping_included=None,
+                shipping_price_krw=None,
+                review_status="needs_review",
+                review_reason="희망가 미기재",
+                raw_line=normalize_space(document["title"] or body.splitlines()[0] if body.splitlines() else body),
+                listing_type="buy",
+                intent_confidence=intent.confidence,
+                price_type="wanted",
+            ))
     if not rows and body:
         print(f"warning: no price line parsed from {document['url']}; review image-only post", file=sys.stderr)
     return rows
+
+
+def _buy_card_label(title: str, body: str) -> str:
+    value = normalize_space(title or body.splitlines()[0] if body.splitlines() else body)
+    value = re.sub(r"(?:구합니다|구해요|삽니다|구매합니다|찾습니다|구함|구매)", "", value)
+    value = re.sub(r"^(?:구매|구함|카드)", "", value)
+    return normalize_space(value).strip(" -·:[]()")
+
+
+def _buy_quantity(body: str) -> int:
+    match = QUANTITY_RE.search(body)
+    return int(match.group("quantity")) if match else 1
 
 
 def build_list_url(gallery_id: str, page: int, gallery_url: str = "") -> str:
@@ -213,7 +253,7 @@ def extract_gallery(
                 continue
             seen_urls.add(post_url)
             fetched_posts += 1
-            rows.extend(extract_post(read(post_url), post_url, gallery_id))
+            rows.extend(extract_post(read(post_url), post_url, gallery_id, subject))
             if delay > 0:
                 time.sleep(delay)
         if fetched_posts >= max_posts:

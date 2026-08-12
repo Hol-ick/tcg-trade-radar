@@ -53,6 +53,8 @@ class ApiTests(unittest.TestCase):
         status = app.request("GET", f"/jobs/{job_id}", headers={"Authorization": "Bearer secret"})
         logs = app.request("GET", f"/jobs/{job_id}/logs", headers={"Authorization": "Bearer secret"})
         rows = app.request("GET", f"/jobs/{job_id}/results", headers={"Authorization": "Bearer secret"})
+        cards = app.request("GET", "/market/cards?game_id=tcggame", headers={"Authorization": "Bearer secret"})
+        listings = app.request("GET", "/market/listings?game_id=tcggame&listing_type=sell", headers={"Authorization": "Bearer secret"})
         self.assertEqual(status.status, 200)
         self.assertEqual(logs.status, 200)
         self.assertTrue(logs.body["logs"])
@@ -60,6 +62,10 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(rows.status, 200)
         self.assertEqual(len(rows.body["rows"]), 1)
         self.assertFalse(rows.body["rows"][0]["exportable"])
+        self.assertEqual(cards.status, 200)
+        self.assertEqual(cards.body["cards"][0]["sell_count"], 1)
+        self.assertEqual(listings.status, 200)
+        self.assertEqual(len(listings.body["rows"]), 1)
 
         row_id = rows.body["rows"][0]["id"]
         reviewed = app.request("POST", f"/rows/{row_id}/review", {"action": "approve", "actor": "tester"}, {"Authorization": "Bearer secret"})

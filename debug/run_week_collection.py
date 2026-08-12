@@ -32,6 +32,7 @@ def main() -> int:
                 gallery_id=game["id"],
                 gallery_url=game["url"],
                 subject=game["subject"],
+                subjects=game.get("subjects", ()),
                 since=since,
                 until=until,
                 max_posts=MAX_POSTS_PER_GAME,
