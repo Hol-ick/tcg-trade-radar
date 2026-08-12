@@ -78,6 +78,8 @@ python -m unittest discover -s tests -v
 python -m compileall -q kaitori_collector debug tests scripts
 ```
 
+수집 로그에 `원본 서버가 빈 응답을 반환했습니다`와 `status=200, content_length=0`이 표시되면 파서 문제가 아니라 실행 환경에서 원본 서버가 본문을 보내지 않은 상태입니다. 이 경우 `python debug/probe_galleries.py --gallery tcggame`으로 갤러리별 응답을 확인하고, 다른 네트워크에서 같은 명령을 다시 실행해 비교합니다. CAPTCHA나 차단 우회는 사용하지 않습니다.
+
 ## 범위와 주의사항
 
 - 공개 게시글만 대상으로 합니다.

@@ -13,7 +13,7 @@ from .comments import parse_comments
 from .contracts import JobRequest, ReviewAction, utc_now
 from .html import DCInsideHTMLParser, parse_html, normalize_space
 from .observability import inspect_source_response, is_retryable_error, retry_delay
-from .parser import build_list_url, extract_comment_token, extract_post, fetch_comment_text, fetch_text
+from .parser import SourceResponseError, build_list_url, extract_comment_token, extract_post, fetch_comment_text, fetch_text
 from .storage import Repository
 
 
@@ -280,6 +280,14 @@ class JobService:
             try:
                 return self.fetcher(url)
             except Exception as exc:
+                if isinstance(exc, SourceResponseError):
+                    self._log(
+                        job_id,
+                        level="error",
+                        step=step,
+                        message="원본 서버가 빈 응답을 반환해 수집을 중단",
+                        details=exc.as_dict(),
+                    )
                 if attempt >= request.max_retries or not is_retryable_error(exc):
                     raise
                 wait = retry_delay(attempt)

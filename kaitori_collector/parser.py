@@ -22,6 +22,33 @@ DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 Chrome/131.0 Safari/537.36 Marineford-Kaitori/0.1"
 )
+
+
+class SourceResponseError(RuntimeError):
+    """The public source returned a response that cannot be parsed safely."""
+
+    def __init__(self, url: str, *, status: int | None, content_length: str | None, server: str | None) -> None:
+        self.url = url
+        self.status = status
+        self.content_length = content_length
+        self.server = server
+        details = [f"url={url}"]
+        if status is not None:
+            details.append(f"status={status}")
+        if content_length:
+            details.append(f"content_length={content_length}")
+        if server:
+            details.append(f"server={server}")
+        super().__init__("원본 서버가 빈 응답을 반환했습니다 (" + ", ".join(details) + ")")
+
+    def as_dict(self) -> dict[str, str | int | None]:
+        return {
+            "url": self.url,
+            "status": self.status,
+            "content_length": self.content_length,
+            "server": self.server,
+            "reason": "empty_response",
+        }
 PRICE_RE = re.compile(
     r"(?P<value>\d+(?:[.,]\d+)?)\s*(?P<unit>만원|만|원)?"
     r"(?:\s*[\(\[]?\s*(?:택포|택배비\s*(?:포함|별도)?|배송비\s*(?:포함|별도)?|포함|별도)\s*[\)\]]?)?\s*$"
@@ -40,10 +67,26 @@ CSV_FIELDS = [
 
 
 def fetch_text(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_USER_AGENT) -> str:
-    request = Request(url, headers={"User-Agent": user_agent, "Accept": "text/html"})
+    request = Request(
+        url,
+        headers={
+            "User-Agent": user_agent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8",
+            "Accept-Encoding": "gzip, deflate",
+            "Referer": "https://gall.dcinside.com/",
+        },
+    )
     with urlopen(request, timeout=timeout) as response:
         payload = response.read()
         encoding = response.headers.get_content_charset() or "utf-8"
+        if not payload:
+            raise SourceResponseError(
+                url,
+                status=getattr(response, "status", None),
+                content_length=response.headers.get("Content-Length"),
+                server=response.headers.get("Server"),
+            )
     return payload.decode(encoding, errors="replace")
 
 

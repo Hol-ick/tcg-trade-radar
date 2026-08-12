@@ -1,10 +1,42 @@
 import unittest
+from unittest.mock import patch
 
 from kaitori_collector.html import parse_html
-from kaitori_collector.parser import build_list_url, extract_gallery, extract_post, parse_sale_line
+from kaitori_collector.parser import SourceResponseError, build_list_url, extract_gallery, extract_post, fetch_text, parse_sale_line
+
+
+class _EmptyResponse:
+    status = 200
+
+    class _Headers:
+        def get_content_charset(self):
+            return "utf-8"
+
+        def get(self, name):
+            return {"Content-Length": "0", "Server": "nginx"}.get(name)
+
+    headers = _Headers()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return b""
 
 
 class ParserTests(unittest.TestCase):
+    def test_empty_source_response_exposes_http_diagnostics(self):
+        with patch("kaitori_collector.parser.urlopen", return_value=_EmptyResponse()):
+            with self.assertRaises(SourceResponseError) as context:
+                fetch_text("https://gall.dcinside.com/mgallery/board/lists/?id=tcggame")
+
+        error = context.exception
+        self.assertIn("status=200", str(error))
+        self.assertEqual(error.as_dict()["content_length"], "0")
+
     def test_extract_post_keeps_public_author_marker(self):
         html = '''
         <div class="w_top_left"><dl><dt>글쓴이</dt><dd><span class="nickname" user_name="카드상인" user_id="carddealer">카드상인</span></dd></dl></div>
