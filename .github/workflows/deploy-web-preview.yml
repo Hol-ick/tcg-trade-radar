@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "web/**"
+      - "scripts/export_week_snapshot.py"
       - "scripts/run_web_smoke.py"
       - ".github/workflows/deploy-web-preview.yml"
   workflow_dispatch:

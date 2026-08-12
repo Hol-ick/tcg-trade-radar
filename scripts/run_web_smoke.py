@@ -1,65 +1,77 @@
-"""Browser smoke test for the local web surface and one bounded live crawl."""
+"""Playwright smoke test for the static weekly collection console."""
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
-import argparse
+from datetime import date, timedelta
 from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
-
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "artifacts"
+
+
+def range_dates(value: str) -> tuple[date, date]:
+    start, end = [date.fromisoformat(item.strip().replace(".", "-")) for item in value.split("—")]
+    return start, end
 
 
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     arguments = argparse.ArgumentParser()
     arguments.add_argument("--path", default="/")
-    arguments.add_argument("--no-crawl", action="store_true")
+    arguments.add_argument("--base-url", default="http://127.0.0.1:5173")
     options = arguments.parse_args()
     ARTIFACTS.mkdir(exist_ok=True)
+
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 1100})
-        page.goto(f"http://127.0.0.1:5173{options.path}", wait_until="networkidle")
-        suffix = options.path.strip("/").replace("/", "-") or "main"
-        page.screenshot(path=str(ARTIFACTS / f"web-ui-{suffix}-before-crawl.png"), full_page=True)
-        if options.path.rstrip("/") == "/dev":
-            page.get_by_text("DEVELOPMENT SURFACE / LIVE SOURCE CHECK", exact=True).wait_for()
-        page.get_by_text("실행 상태", exact=True).wait_for()
-        if options.no_crawl:
-            print(json.dumps({"state": "static-ready", "path": options.path}, ensure_ascii=False))
-            browser.close()
-            return 0
-        page.get_by_label("최대 게시글").fill("1")
-        page.get_by_role("button", name="실제 수집 시작").click()
+        page: Page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        page.goto(f"{options.base_url}{options.path}", wait_until="networkidle")
+        page.screenshot(path=str(ARTIFACTS / "weekly-console-before.png"), full_page=True)
+        page.get_by_role("heading", name="판매글을 주 단위로 확인합니다.").wait_for()
+        assert page.get_by_role("button", name="이전 주").is_enabled()
+        current_text = page.locator(".week-buttons strong").inner_text()
+        current_start, current_end = range_dates(current_text)
+        page.get_by_role("button", name="이전 주").click()
+        page.get_by_text("이 기간의 수집 데이터가 없습니다.").wait_for(timeout=10_000)
+        previous_text = page.locator(".week-buttons strong").inner_text()
+        previous_start, previous_end = range_dates(previous_text)
+        assert previous_start == current_start - timedelta(days=7)
+        assert previous_end == current_end - timedelta(days=7)
+        page.get_by_role("button", name="다음 주").click()
+        page.locator(".week-buttons strong").filter(has_text=current_text).wait_for(timeout=10_000)
+        page.locator(".count-badge").filter(has_text=re.compile(r"[1-9]\d* rows")).wait_for(timeout=10_000)
+        next_button = page.get_by_role("button", name="다음 주")
+        assert not next_button.is_enabled()
 
-        page.get_by_text("worker polling", exact=False).wait_for(timeout=10_000)
-        terminal_badge = page.locator("[data-slot='badge']").filter(has_text=re.compile(r"^(완료|실패)$"))
-        terminal_badge.wait_for(timeout=180_000)
-        page.wait_for_timeout(1_000)
-        page.screenshot(path=str(ARTIFACTS / f"web-ui-{suffix}-after-crawl.png"), full_page=True)
+        csv_download = None
+        if page.get_by_role("link", name="CSV 저장").count():
+            with page.expect_download() as download_info:
+                page.get_by_role("link", name="CSV 저장").click()
+            csv_download = download_info.value
+            csv_download.save_as(str(ARTIFACTS / "weekly-console.csv"))
 
-        body_text = page.locator("body").inner_text()
-        state = "completed" if terminal_badge.filter(has_text="완료").count() else "failed"
-        print(json.dumps({
-            "state": state,
+        body = page.locator("body").inner_text()
+        result = {
             "path": options.path,
-            "contains_dev_surface": "DEVELOPMENT SURFACE / LIVE SOURCE CHECK" in body_text,
-            "contains_source_setup": "수집 범위를 고르세요" in body_text,
-            "contains_result_panel": "추출 결과" in body_text,
-            "contains_diagnostics": "HTTP" in body_text or "응답" in body_text or "목록" in body_text,
-            "body_excerpt": body_text[-1600:],
-            "screenshots": [
-                f"artifacts/web-ui-{suffix}-before-crawl.png",
-                f"artifacts/web-ui-{suffix}-after-crawl.png",
-            ],
-        }, ensure_ascii=False, indent=2))
+            "current_range": current_text,
+            "previous_range": previous_text,
+            "shifted_by_days": (current_start - previous_start).days,
+            "next_disabled": not next_button.is_enabled(),
+            "rows_text": next((line for line in body.splitlines() if re.fullmatch(r"\d+ rows", line)), "0 rows"),
+            "csv_downloaded": csv_download is not None,
+            "worker_copy_present": bool(re.search(r"worker|폴링|API 토큰", body, re.IGNORECASE)),
+            "dev_tag_present": "DEV" in body if options.path.rstrip("/") == "/dev" else None,
+        }
+        page.screenshot(path=str(ARTIFACTS / "weekly-console-after.png"), full_page=True)
+        (ARTIFACTS / "weekly-console-verification.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         browser.close()
-        return 0 if state == "completed" else 1
+        return 0 if result["shifted_by_days"] == 7 and not result["worker_copy_present"] else 1
 
 
 if __name__ == "__main__":

@@ -1,5 +1,16 @@
 # TCG Trade Radar
 
+## 주간 정적 수집 콘솔
+
+웹 화면은 더 이상 로컬 HTTP worker나 브라우저 API를 호출하지 않습니다. 원본 게시판은 CORS를 제공하지 않기 때문에, GitHub Actions가 일회성 Python 수집을 실행하고 다음 정적 파일을 커밋합니다.
+
+```text
+web/public/data/weeks/<gallery_id>/<since>.json
+web/public/data/weeks/<gallery_id>/<since>.csv
+```
+
+`since`부터 6일 뒤까지가 포함된 정확히 7일 범위입니다. 웹 화면의 `이전 주`, `다음 주`, `이번 주` 버튼은 이 범위를 7일씩 이동합니다. 화면의 `주간 수집 실행` 링크에서 `Collect weekly snapshot` workflow를 수동 실행할 수 있고, 매주 월요일에는 기본 TCG 갤러리가 자동 수집됩니다. 수집은 `python scripts/export_week_snapshot.py ...`로 한 번만 실행되며 서버를 띄우지 않습니다.
+
 디시인사이드 TCG 갤러리의 유저 거래 글을 모아 카드 거래 동향을 살펴보는 도구입니다.
 
 현재는 별도 워커나 브라우저 연결 없이 Python 데스크톱 앱 하나로 실행합니다.
