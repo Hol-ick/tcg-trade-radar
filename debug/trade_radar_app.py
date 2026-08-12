@@ -71,10 +71,19 @@ class TradeRadarApp:
             style.theme_use("vista")
         except tk.TclError:
             pass
-        style.configure("AppTitle.TLabel", font=("Segoe UI", 22, "bold"), foreground="#16202a")
-        style.configure("Subtle.TLabel", foreground="#667789")
+        self.root.configure(bg="#f4efe6")
+        style.configure("TFrame", background="#f4efe6")
+        style.configure("TLabelframe", background="#f4efe6", bordercolor="#d8cdbb")
+        style.configure("TLabelframe.Label", background="#f4efe6", foreground="#16202a", font=("Segoe UI", 10, "bold"))
+        style.configure("TLabel", background="#f4efe6", foreground="#16202a")
+        style.configure("AppTitle.TLabel", font=("Segoe UI", 22, "bold"), foreground="#16202a", background="#f4efe6")
+        style.configure("Subtle.TLabel", foreground="#667789", background="#f4efe6")
         style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=(14, 8))
         style.configure("Metric.TLabel", font=("Segoe UI", 16, "bold"), foreground="#16202a")
+        style.configure("TNotebook", background="#f4efe6", borderwidth=0)
+        style.configure("TNotebook.Tab", padding=(16, 9), font=("Segoe UI", 10, "bold"))
+        style.configure("Treeview", rowheight=30, background="#fffdf8", fieldbackground="#fffdf8", foreground="#24313b", font=("Segoe UI", 9))
+        style.configure("Treeview.Heading", background="#16202a", foreground="#ffffff", font=("Segoe UI", 9, "bold"))
 
     def _build(self) -> None:
         shell = ttk.Frame(self.root, padding=24)
@@ -82,7 +91,7 @@ class TradeRadarApp:
         header = ttk.Frame(shell)
         header.pack(fill="x", pady=(0, 18))
         ttk.Label(header, text="TCG TRADE RADAR", style="AppTitle.TLabel").pack(side="left")
-        ttk.Label(header, text="공개 유저 거래 신호 탐색기", style="Subtle.TLabel").pack(side="left", padx=(14, 0), pady=(8, 0))
+        ttk.Label(header, text="PUBLIC SIGNALS / 07D", style="Subtle.TLabel").pack(side="left", padx=(14, 0), pady=(8, 0))
         self.header_state = ttk.Label(header, text="수집 데이터 기준", style="Subtle.TLabel")
         self.header_state.pack(side="right", pady=(8, 0))
 
@@ -139,6 +148,9 @@ class TradeRadarApp:
             self.card_tree.column(column, width=widths[column], anchor="w" if column in {"card", "game", "range", "status", "evidence", "latest"} else "center")
         scroll = ttk.Scrollbar(table, orient="vertical", command=self.card_tree.yview)
         self.card_tree.configure(yscrollcommand=scroll.set)
+        self.card_tree.tag_configure("hot", foreground="#c94e3e")
+        self.card_tree.tag_configure("balanced", foreground="#2f7770")
+        self.card_tree.tag_configure("supply", foreground="#667789")
         self.card_tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
         self.card_tree.bind("<Double-1>", self._show_card_detail)
@@ -256,7 +268,7 @@ class TradeRadarApp:
             self.card_tree.insert("", "end", iid=f"card-{index}", values=(
                 item["card_name_raw"], game_name(item["gallery_id"]), item["sell_count"], item["buy_count"], money(item["sell_price_median"]),
                 f"{money(item['sell_price_min'])} ~ {money(item['sell_price_max'])}", _status_label(item["demand_status"]), item["evidence"], item["latest_posted_at"],
-            ), tags=(item["card_key"], item["gallery_id"]))
+            ), tags=(item["card_key"], item["gallery_id"], {"hot_demand": "hot", "balanced": "balanced", "supply_heavy": "supply"}.get(item["demand_status"], "")))
         self.card_metric.set(str(len(summaries)))
         self.demand_metric.set(str(sum(1 for item in summaries if item["buy_count"] > 0)))
         self.supply_metric.set(str(sum(item["sell_count"] for item in summaries)))
