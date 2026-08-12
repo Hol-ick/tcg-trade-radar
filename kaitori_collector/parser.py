@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
+from .browser_transport import BrowserTransportError, get_default_transport
 from .contracts import ExtractedRow, to_public_row
 from .html import DCInsideHTMLParser, normalize_space, parse_html
 from .intent import classify_listing
@@ -27,11 +29,13 @@ DEFAULT_USER_AGENT = (
 class SourceResponseError(RuntimeError):
     """The public source returned a response that cannot be parsed safely."""
 
-    def __init__(self, url: str, *, status: int | None, content_length: str | None, server: str | None) -> None:
+    def __init__(self, url: str, *, status: int | None, content_length: str | None, server: str | None, transport: str = "http", fallback_error: str = "") -> None:
         self.url = url
         self.status = status
         self.content_length = content_length
         self.server = server
+        self.transport = transport
+        self.fallback_error = fallback_error
         details = [f"url={url}"]
         if status is not None:
             details.append(f"status={status}")
@@ -39,6 +43,8 @@ class SourceResponseError(RuntimeError):
             details.append(f"content_length={content_length}")
         if server:
             details.append(f"server={server}")
+        if fallback_error:
+            details.append(f"fallback={fallback_error}")
         super().__init__("원본 서버가 빈 응답을 반환했습니다 (" + ", ".join(details) + ")")
 
     def as_dict(self) -> dict[str, str | int | None]:
@@ -47,6 +53,8 @@ class SourceResponseError(RuntimeError):
             "status": self.status,
             "content_length": self.content_length,
             "server": self.server,
+            "transport": self.transport,
+            "fallback_error": self.fallback_error,
             "reason": "empty_response",
         }
 PRICE_RE = re.compile(
@@ -88,6 +96,63 @@ def fetch_text(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_USER_A
                 server=response.headers.get("Server"),
             )
     return payload.decode(encoding, errors="replace")
+
+
+def fetch_text_browser(url: str, timeout: float = 30.0, user_agent: str = DEFAULT_USER_AGENT) -> str:
+    """Fetch one public page through a normal browser page."""
+    return get_default_transport(user_agent=user_agent).fetch(url, timeout)
+
+
+def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_USER_AGENT) -> str:
+    """Try direct HTTP first, then the Playwright transport for browser-only responses."""
+    try:
+        return fetch_text(url, timeout, user_agent)
+    except (SourceResponseError, HTTPError) as http_error:
+        try:
+            return fetch_text_browser(url, max(timeout, 30.0), user_agent)
+        except BrowserTransportError as browser_error:
+            if isinstance(http_error, SourceResponseError):
+                raise SourceResponseError(
+                    url,
+                    status=http_error.status,
+                    content_length=http_error.content_length,
+                    server=http_error.server,
+                    transport="http+playwright",
+                    fallback_error=str(browser_error),
+                ) from browser_error
+            raise SourceResponseError(
+                url,
+                status=getattr(http_error, "code", None),
+                content_length=None,
+                server=None,
+                transport="http+playwright",
+                fallback_error=str(browser_error),
+            ) from browser_error
+
+
+def fetch_comment_text_auto(
+    post_url: str,
+    gallery_id: str,
+    post_number: str,
+    ci_t: str,
+    page: int = 1,
+    timeout: float = 15.0,
+    user_agent: str = DEFAULT_USER_AGENT,
+) -> str:
+    try:
+        body = fetch_comment_text(post_url, gallery_id, post_number, ci_t, page, timeout, user_agent)
+        if body.strip():
+            return body
+    except (HTTPError, OSError):
+        pass
+    return get_default_transport(user_agent=user_agent).fetch_comment(
+        post_url,
+        gallery_id,
+        post_number,
+        ci_t,
+        page,
+        max(timeout, 30.0),
+    )
 
 
 def fetch_comment_text(
@@ -315,7 +380,7 @@ def extract_gallery(
         raise ValueError("max_posts must be between 1 and 200")
     if delay < 0:
         raise ValueError("delay must be zero or greater")
-    read = fetcher or (lambda url: fetch_text(url, timeout, user_agent))
+    read = fetcher or (lambda url: fetch_text_auto(url, timeout, user_agent))
     rows: list[ExtractedRow] = []
     seen_urls: set[str] = set()
     fetched_posts = 0

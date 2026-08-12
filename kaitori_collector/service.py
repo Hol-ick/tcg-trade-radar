@@ -9,11 +9,12 @@ from typing import Callable, Any
 from urllib.parse import parse_qs, urljoin, urlparse
 
 from . import __version__
+from .browser_transport import BrowserTransportError
 from .comments import parse_comments
 from .contracts import JobRequest, ReviewAction, utc_now
 from .html import DCInsideHTMLParser, parse_html, normalize_space
 from .observability import inspect_source_response, is_retryable_error, retry_delay
-from .parser import SourceResponseError, build_list_url, extract_comment_token, extract_post, fetch_comment_text, fetch_text
+from .parser import SourceResponseError, build_list_url, extract_comment_token, extract_post, fetch_comment_text_auto, fetch_text_auto
 from .storage import Repository
 
 
@@ -24,8 +25,8 @@ CommentFetcher = Callable[[str, str, str, str, int], str]
 class JobService:
     def __init__(self, repository: Repository, fetcher: Fetcher | None = None, sleep: Callable[[float], None] = time.sleep, catalog: list[Any] | None = None, comment_fetcher: CommentFetcher | None = None) -> None:
         self.repository = repository
-        self.fetcher = fetcher or fetch_text
-        self.comment_fetcher = comment_fetcher or (lambda post_url, gallery_id, post_number, ci_t, page: fetch_comment_text(post_url, gallery_id, post_number, ci_t, page))
+        self.fetcher = fetcher or fetch_text_auto
+        self.comment_fetcher = comment_fetcher or (lambda post_url, gallery_id, post_number, ci_t, page: fetch_comment_text_auto(post_url, gallery_id, post_number, ci_t, page))
         self.sleep = sleep
         self.catalog = catalog or []
         self._threads: dict[str, threading.Thread] = {}
@@ -280,7 +281,7 @@ class JobService:
             try:
                 return self.fetcher(url)
             except Exception as exc:
-                if isinstance(exc, SourceResponseError):
+                if isinstance(exc, (SourceResponseError, BrowserTransportError)):
                     self._log(
                         job_id,
                         level="error",

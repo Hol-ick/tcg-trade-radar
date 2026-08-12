@@ -21,12 +21,20 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Yu-Gi-Oh public gallery sample collection")
     parser.add_argument("--max-posts", type=int, default=10)
+    parser.add_argument("--transport", choices=("auto", "http", "browser"), default="auto")
     args = parser.parse_args()
     max_posts = max(1, min(args.max_posts, 10))
     until = date.today()
     since = until - timedelta(days=6)
     repo = Repository(PROJECT_ROOT / ".audit" / "yugioh-sample.sqlite3")
-    service = JobService(repo)
+    if args.transport == "http":
+        from kaitori_collector.parser import fetch_text
+        service = JobService(repo, fetcher=fetch_text)
+    elif args.transport == "browser":
+        from kaitori_collector.parser import fetch_text_browser
+        service = JobService(repo, fetcher=fetch_text_browser)
+    else:
+        service = JobService(repo)
     request = JobRequest(
         gallery_id="tcggame",
         gallery_url="https://gall.dcinside.com/mgallery/board/lists?id=tcggame",

@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from kaitori_collector.html import parse_html
-from kaitori_collector.parser import SourceResponseError, build_list_url, extract_gallery, extract_post, fetch_text, parse_sale_line
+from kaitori_collector.parser import SourceResponseError, build_list_url, extract_gallery, extract_post, fetch_text, fetch_text_auto, parse_sale_line
 
 
 class _EmptyResponse:
@@ -28,6 +28,18 @@ class _EmptyResponse:
 
 
 class ParserTests(unittest.TestCase):
+    def test_auto_transport_falls_back_to_browser_after_empty_http_response(self):
+        browser_html = '<html><body><table><tr><td class="gall_subject">판매</td></tr></table></body></html>'
+        http_error = SourceResponseError(
+            "https://example.test/list",
+            status=200,
+            content_length="0",
+            server="nginx",
+        )
+        with patch("kaitori_collector.parser.fetch_text", side_effect=http_error):
+            with patch("kaitori_collector.parser.fetch_text_browser", return_value=browser_html):
+                self.assertEqual(fetch_text_auto("https://example.test/list"), browser_html)
+
     def test_empty_source_response_exposes_http_diagnostics(self):
         with patch("kaitori_collector.parser.urlopen", return_value=_EmptyResponse()):
             with self.assertRaises(SourceResponseError) as context:

@@ -9,6 +9,8 @@
 
 Windows에서는 [`debug/run-kaitori.bat`](debug/run-kaitori.bat)을 실행합니다.
 
+처음 실행하는 환경은 프로젝트 폴더에서 `python -m pip install -e .`로 Playwright 의존성을 설치합니다. Chrome이 설치되어 있으면 자동 사용하며, 화면을 보면서 확인하려면 `TCG_TRADE_BROWSER_HEADLESS=0`을 설정합니다.
+
 또는 프로젝트 폴더에서 다음 명령을 실행합니다.
 
 ```powershell
@@ -68,6 +70,8 @@ python debug/probe_galleries.py --gallery tcggame --gallery onepiececardgame --g
 ```powershell
 python debug/run_yugioh_sample.py --max-posts 10
 ```
+
+수집 전송은 `auto`가 기본값이며 HTTP 요청이 빈 응답이면 Playwright 브라우저 페이지로 한 번 더 읽습니다. 직접 선택하려면 `python debug/run_yugioh_sample.py --transport browser --max-posts 10`을 사용합니다. 브라우저가 설치된 경로가 자동 인식되지 않으면 `TCG_TRADE_BROWSER_EXECUTABLE`에 Chrome 실행 파일 경로를 지정합니다.
 
 결과 JSON에는 게시글 작성자, 유동·고닉 유형, 댓글, 단계별 로그가 함께 포함됩니다. 댓글은 글 조회 응답과 분리된 공개 댓글 응답에서 읽습니다.
 
