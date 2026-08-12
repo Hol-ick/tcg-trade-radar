@@ -30,19 +30,21 @@ async function request<T>(path: string, token = "", init: RequestInit = {}) {
 
   const response = await fetch(`${baseUrl}${path}`, { ...init, headers })
   const text = await response.text()
+  const contentType = response.headers.get("content-type") || ""
   let payload: unknown = null
 
-  if (text) {
+  if (text && contentType.includes("json")) {
     try {
       payload = JSON.parse(text)
     } catch {
-      payload = { error: text }
+      payload = null
     }
   }
 
   if (!response.ok) {
     const error = payload as { error?: string } | null
-    throw new ApiError(error?.error || `API 요청 실패 (${response.status})`, response.status)
+    const message = error?.error || (contentType.includes("text/html") || [502, 503, 504].includes(response.status) ? "worker에 연결할 수 없습니다." : `API 요청 실패 (${response.status})`)
+    throw new ApiError(message, response.status)
   }
 
   return payload as T

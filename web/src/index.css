@@ -57,13 +57,8 @@
 html { scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; background: #0c141c; font-family: "Geist Variable", sans-serif; }
 button, input, select { font: inherit; }
-.radar-grid { background-image: linear-gradient(rgba(144, 182, 198, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(144, 182, 198, 0.045) 1px, transparent 1px); background-size: 34px 34px; mask-image: linear-gradient(to bottom, black, transparent 80%); }
 .ink-panel { background: rgba(22, 35, 46, 0.9); border: 1px solid rgba(255,255,255,0.1); }
 .paper-panel { background: #f1ece1; }
-.evidence-note { background: #f1ece1; color: #17212a; padding: 1.35rem; transform: rotate(1.1deg); box-shadow: 10px 14px 0 rgba(4, 9, 14, 0.25); }
-.eyebrow { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
-.pill { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: .38rem .65rem; color: #94a3b8; background: rgba(255,255,255,.045); }
-.pill-orange { border-color: rgba(251,146,60,.3); color: #fed7aa; background: rgba(251,146,60,.1); }
 .source-tile { border: 1px solid rgba(255,255,255,.09); border-radius: .75rem; padding: .75rem; background: rgba(255,255,255,.025); transition: border-color .15s ease, background .15s ease, transform .15s ease; }
 .source-tile:hover:not(:disabled) { border-color: rgba(103,232,249,.45); background: rgba(103,232,249,.06); transform: translateY(-1px); }
 .source-tile-active { border-color: rgba(251,146,60,.65); background: rgba(251,146,60,.09); }
