@@ -1,6 +1,8 @@
 """Application service for asynchronous collection and review workflows."""
 from __future__ import annotations
 
+import csv
+import io
 import json
 import threading
 import time
@@ -14,7 +16,7 @@ from .comments import parse_comments
 from .contracts import JobRequest, ReviewAction, utc_now
 from .html import DCInsideHTMLParser, parse_html, normalize_space
 from .observability import inspect_source_response, is_retryable_error, retry_delay
-from .parser import SourceResponseError, build_list_url, extract_comment_token, extract_post, fetch_comment_text_auto, fetch_text_auto
+from .parser import CSV_FIELDS, SourceResponseError, build_list_url, extract_comment_token, extract_post, fetch_comment_text_auto, fetch_text_auto
 from .storage import Repository
 
 
@@ -245,6 +247,16 @@ class JobService:
             result.append(item)
         return result
 
+    def export_csv(self, job_id: str) -> str:
+        """Serialize all extracted rows without changing their review state."""
+        rows = self.get_results(job_id)
+        output = io.StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=CSV_FIELDS, extrasaction="ignore", lineterminator="\r\n")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field, "") for field in CSV_FIELDS})
+        return "\ufeff" + output.getvalue()
+
     def retry_job(self, job_id: str, *, start: bool = True) -> str:
         job = self.repository.get_job(job_id)
         if job is None:
@@ -279,17 +291,33 @@ class JobService:
     def _fetch_with_retry(self, job_id: str, url: str, request: JobRequest, step: str) -> str:
         for attempt in range(request.max_retries + 1):
             try:
-                return self.fetcher(url)
+                body = self.fetcher(url)
+                if step in {"list", "post"}:
+                    profile = inspect_source_response(body, url, expected=step)
+                    if profile.state in {"empty", "blocked", "structure_changed", "suspicious"} and attempt < request.max_retries:
+                        wait = retry_delay(attempt)
+                        self._log(
+                            job_id,
+                            level="warning",
+                            step=step,
+                            message=f"원본 응답 구조 재시도 · {attempt + 1}/{request.max_retries}",
+                            details={"url": url, "state": profile.state, "reason": profile.reason, "delay_seconds": wait},
+                        )
+                        self.sleep(wait)
+                        continue
+                return body
             except Exception as exc:
                 if isinstance(exc, (SourceResponseError, BrowserTransportError)):
+                    response_message = "원본 응답 구조가 인식되지 않아 fallback을 계속 시도합니다" if isinstance(exc, SourceResponseError) and "response-shape-unrecognized" in exc.fallback_error else "원본 서버가 빈 응답을 반환해 수집을 중단"
                     self._log(
                         job_id,
                         level="error",
                         step=step,
-                        message="원본 서버가 빈 응답을 반환해 수집을 중단",
+                        message=response_message,
                         details=exc.as_dict(),
                     )
-                if attempt >= request.max_retries or not is_retryable_error(exc):
+                shape_retryable = isinstance(exc, SourceResponseError) and "response-shape-unrecognized" in exc.fallback_error
+                if attempt >= request.max_retries or not (is_retryable_error(exc) or shape_retryable):
                     raise
                 wait = retry_delay(attempt)
                 self._log(job_id, level="warning", step=step, message=f"요청 재시도 대기 · {attempt + 1}/{request.max_retries}", details={"url": url, "error_type": type(exc).__name__, "delay_seconds": wait})

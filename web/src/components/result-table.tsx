@@ -1,16 +1,20 @@
-import { ExternalLink, PackageSearch } from "lucide-react"
+import { Download, ExternalLink, PackageSearch } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { ResultRow } from "@/lib/types"
 
-export function ResultTable({ rows }: { rows: ResultRow[] }) {
+export function ResultTable({ rows, onDownloadCsv }: { rows: ResultRow[]; onDownloadCsv?: () => void }) {
   return (
     <Card className="paper-panel border-0 shadow-none">
       <CardHeader className="flex flex-row items-center justify-between gap-3 border-b border-slate-900/10 px-5 py-4 sm:px-6">
         <CardTitle className="flex items-center gap-2 text-base text-slate-900"><PackageSearch className="size-4 text-orange-600" /> 추출 결과</CardTitle>
-        <Badge className="bg-slate-900 text-white">{rows.length} rows</Badge>
+        <div className="flex items-center gap-2">
+          {rows.length > 0 && onDownloadCsv && <Button type="button" size="sm" variant="outline" className="border-slate-900/15 text-slate-700" onClick={onDownloadCsv}><Download className="mr-1.5 size-3.5" /> CSV 저장</Button>}
+          <Badge className="bg-slate-900 text-white">{rows.length} rows</Badge>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {rows.length ? (

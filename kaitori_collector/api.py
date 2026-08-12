@@ -72,6 +72,8 @@ class WorkerApplication:
             return ApiResponse(201, {"game_id": game_id, "snapshot_date": snapshot_date, "count": count})
 
         parts = [part for part in route.split("/") if part]
+        if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "csv" and method == "GET":
+            return ApiResponse(200, self.service.export_csv(parts[1]), "text/csv; charset=utf-8")
         if len(parts) == 2 and parts[0] == "jobs" and method == "GET":
             return ApiResponse(200, self.service.get_job_status(parts[1]))
         if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "logs" and method == "GET":

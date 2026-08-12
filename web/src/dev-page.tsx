@@ -5,7 +5,7 @@ import { CollectorForm } from "@/components/collector-form"
 import { JobLogs } from "@/components/job-logs"
 import { JobStatusCard } from "@/components/job-status"
 import { ResultTable } from "@/components/result-table"
-import { createJob, getHealth } from "@/lib/api"
+import { createJob, downloadJobCsv, getHealth } from "@/lib/api"
 import { useJobPolling } from "@/hooks/use-job-polling"
 import type { JobRequest } from "@/lib/types"
 
@@ -14,6 +14,7 @@ export function DevPage() {
   const [jobId, setJobId] = useState<string | null>(null)
   const [health, setHealth] = useState("checking")
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
   const { job, logs, rows, error, isPolling } = useJobPolling(jobId, token)
 
   useEffect(() => {
@@ -27,6 +28,19 @@ export function DevPage() {
       setJobId(response.job_id || response.id)
     } catch (caught) {
       setSubmitError(caught instanceof Error ? caught.message : "dev 수집을 시작하지 못했습니다.")
+    }
+  }
+
+  const exportCsv = async () => {
+    if (!jobId) return
+    setIsExporting(true)
+    setSubmitError(null)
+    try {
+      await downloadJobCsv(jobId, token)
+    } catch (caught) {
+      setSubmitError(caught instanceof Error ? caught.message : "CSV를 저장하지 못했습니다.")
+    } finally {
+      setIsExporting(false)
     }
   }
 
@@ -58,7 +72,7 @@ export function DevPage() {
           <CollectorForm disabled={isPolling} token={token} onTokenChange={setToken} onSubmit={startProbe} />
           <div className="flex min-w-0 flex-col gap-5"><JobStatusCard job={job} isPolling={isPolling} error={error} /><JobLogs logs={logs} /></div>
         </section>
-        <section className="mt-5"><ResultTable rows={rows} /></section>
+        <section className="mt-5"><ResultTable rows={rows} onDownloadCsv={isExporting ? undefined : exportCsv} /></section>
 
         <div className="mt-8 flex flex-col gap-3 border-t border-white/10 pt-5 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between">
           <span className="inline-flex items-center gap-2"><CheckCircle2 className="size-3.5 text-emerald-300" /> diagnostics remain visible on empty or changed responses</span>

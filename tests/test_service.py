@@ -94,6 +94,30 @@ class JobServiceTests(unittest.TestCase):
             self.assertTrue(any("재시도" in log["message"] for log in service.get_logs(job_id)))
             repo.close()
 
+    def test_structure_changed_list_is_retried_before_failing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            calls = {"list": 0}
+
+            def shape_flaky_fetcher(url: str) -> str:
+                if "lists" in url:
+                    calls["list"] += 1
+                    if calls["list"] == 1:
+                        return "<html><head><title>잠시만 기다려 주세요</title></head><body>retry</body></html>"
+                    return LIST_HTML
+                return POST_HTML
+
+            service = JobService(repo, fetcher=shape_flaky_fetcher, sleep=lambda _: None)
+            job_id = service.create_job(JobRequest(gallery_id="tcggame", max_posts=1, max_retries=1), start=False)
+
+            status = service.run_job(job_id)
+
+            self.assertEqual(status["state"], "completed")
+            self.assertEqual(status["counts"]["rows"], 1)
+            self.assertEqual(calls["list"], 2)
+            self.assertTrue(any("구조" in log["message"] and "재시도" in log["message"] for log in service.get_logs(job_id)))
+            repo.close()
+
     def test_job_collects_public_comments_and_author_type(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "kaitori.sqlite3")

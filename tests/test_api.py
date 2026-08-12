@@ -78,6 +78,22 @@ class ApiTests(unittest.TestCase):
         approved = app.request("GET", f"/jobs/{job_id}/results?approved_only=true", headers={"Authorization": "Bearer secret"})
         self.assertTrue(approved.body["rows"][0]["exportable"])
 
+    def test_csv_export_returns_rows_without_mutating_review_status(self):
+        app = self.make_app()
+        created = app.request("POST", "/jobs", {"gallery_id": "tcggame", "max_posts": 1, "delay": 0}, {"Authorization": "Bearer secret"})
+        job_id = created.body["job_id"]
+        app.service.run_job(job_id)
+
+        before = app.request("GET", f"/jobs/{job_id}/results", headers={"Authorization": "Bearer secret"})
+        exported = app.request("GET", f"/jobs/{job_id}/csv", headers={"Authorization": "Bearer secret"})
+        after = app.request("GET", f"/jobs/{job_id}/results", headers={"Authorization": "Bearer secret"})
+
+        self.assertEqual(exported.status, 200)
+        self.assertEqual(exported.content_type, "text/csv; charset=utf-8")
+        self.assertIn("gallery_id,post_title,post_url", exported.body)
+        self.assertIn("블루아이즈", exported.body)
+        self.assertEqual(before.body["rows"][0]["review_status"], after.body["rows"][0]["review_status"])
+
 
 if __name__ == "__main__":
     unittest.main()

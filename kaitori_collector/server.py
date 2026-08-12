@@ -38,7 +38,12 @@ def make_handler(application: WorkerApplication) -> Type[BaseHTTPRequestHandler]
             self._write(response.status, response.body, response.content_type)
 
         def _write(self, status: int, body: object, content_type: str = "application/json; charset=utf-8") -> None:
-            raw = b"" if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
+            if body is None:
+                raw = b""
+            elif content_type.startswith("text/") and isinstance(body, str):
+                raw = body.encode("utf-8")
+            else:
+                raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(raw)))

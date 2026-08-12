@@ -101,6 +101,32 @@ class ParserTests(unittest.TestCase):
                     self.assertEqual(fetch_text_auto(http_error.url), browser_html)
                     browser.assert_called_once()
 
+    def test_auto_transport_rejects_unrecognized_desktop_shape_before_mobile(self):
+        desktop_html = "<!DOCTYPE html><html><head><title>잠시만 기다려 주세요</title></head><body>retry</body></html>"
+        mobile_html = '''
+        <html><body><table><tr>
+          <td class="gall_subject">판매</td>
+          <td><a class="gall_tit" href="/mgallery/board/view/?id=tcggame&amp;no=1">첫 글</a></td>
+        </tr></table></body></html>
+        '''
+        url = "https://gall.dcinside.com/mgallery/board/lists?id=tcggame"
+        with patch("kaitori_collector.parser.fetch_text", return_value=desktop_html):
+            with patch("kaitori_collector.parser.fetch_text_mobile", return_value=mobile_html) as mobile:
+                with patch("kaitori_collector.parser.fetch_text_browser") as browser:
+                    self.assertEqual(fetch_text_auto(url), mobile_html)
+                    mobile.assert_called_once()
+                    browser.assert_not_called()
+
+    def test_auto_transport_does_not_return_unrecognized_browser_shape(self):
+        invalid_html = "<!DOCTYPE html><html><head><title>retry</title></head><body>retry</body></html>"
+        url = "https://gall.dcinside.com/mgallery/board/lists?id=tcggame"
+        with patch("kaitori_collector.parser.fetch_text", return_value=invalid_html):
+            with patch("kaitori_collector.parser.fetch_text_mobile", return_value=invalid_html):
+                with patch("kaitori_collector.parser.fetch_text_browser", return_value=invalid_html):
+                    with self.assertRaises(SourceResponseError) as context:
+                        fetch_text_auto(url)
+        self.assertIn("response-shape-unrecognized", context.exception.fallback_error)
+
     def test_mobile_list_rows_are_parsed(self):
         html = '''
         <ul class="gall-detail-lst">

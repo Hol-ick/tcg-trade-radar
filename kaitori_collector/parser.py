@@ -175,51 +175,76 @@ def fetch_text_browser(url: str, timeout: float = 30.0, user_agent: str = DEFAUL
 def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_USER_AGENT) -> str:
     """Try desktop HTTP, then mobile HTTP, then the browser transport."""
     try:
-        return fetch_text(url, timeout, user_agent)
+        desktop_body = fetch_text(url, timeout, user_agent)
+        if _has_expected_source_markup(url, desktop_body):
+            return desktop_body
+        http_error: SourceResponseError | HTTPError = SourceResponseError(
+            url,
+            status=200,
+            content_length=str(len(desktop_body)),
+            server="unknown",
+            transport="http",
+            fallback_error="response-shape-unrecognized",
+        )
     except (SourceResponseError, HTTPError) as http_error:
         if isinstance(http_error, SourceResponseError) and http_error.content_length in (None, "", "0"):
             try:
-                return fetch_text(url, timeout, user_agent)
+                desktop_retry = fetch_text(url, timeout, user_agent)
+                if _has_expected_source_markup(url, desktop_retry):
+                    return desktop_retry
             except (SourceResponseError, HTTPError):
                 pass
-        mobile_error: Exception | None = None
-        try:
-            mobile_body = fetch_text_mobile(url, max(timeout, 20.0))
-            if _has_expected_source_markup(url, mobile_body):
-                return mobile_body
-            mobile_error = SourceResponseError(
-                mobile_url_for(url),
-                status=200,
-                content_length=str(len(mobile_body)),
-                server="unknown",
-                transport="mobile-http",
-                fallback_error="response-shape-unrecognized",
-            )
-        except (SourceResponseError, HTTPError, OSError) as error:
-            mobile_error = error
-        try:
-            return fetch_text_browser(url, max(timeout, 30.0), user_agent)
-        except BrowserTransportError as browser_error:
-            fallback = str(browser_error)
-            if mobile_error is not None:
-                fallback = f"mobile={mobile_error}; browser={fallback}"
-            if isinstance(http_error, SourceResponseError):
-                raise SourceResponseError(
-                    url,
-                    status=http_error.status,
-                    content_length=http_error.content_length,
-                    server=http_error.server,
-                    transport="http+playwright",
-                    fallback_error=fallback,
-                ) from browser_error
+    mobile_error: Exception | None = None
+    try:
+        mobile_body = fetch_text_mobile(url, max(timeout, 20.0))
+        if _has_expected_source_markup(url, mobile_body):
+            return mobile_body
+        mobile_error = SourceResponseError(
+            mobile_url_for(url),
+            status=200,
+            content_length=str(len(mobile_body)),
+            server="unknown",
+            transport="mobile-http",
+            fallback_error="response-shape-unrecognized",
+        )
+    except (SourceResponseError, HTTPError, OSError) as error:
+        mobile_error = error
+    try:
+        browser_body = fetch_text_browser(url, max(timeout, 30.0), user_agent)
+        if _has_expected_source_markup(url, browser_body):
+            return browser_body
+        fallback = "response-shape-unrecognized"
+        if mobile_error is not None:
+            fallback = f"mobile={mobile_error}; {fallback}"
+        raise SourceResponseError(
+            url,
+            status=200,
+            content_length=str(len(browser_body)),
+            server="browser",
+            transport="http+mobile+browser",
+            fallback_error=fallback,
+        )
+    except BrowserTransportError as browser_error:
+        fallback = str(browser_error)
+        if mobile_error is not None:
+            fallback = f"mobile={mobile_error}; browser={fallback}"
+        if isinstance(http_error, SourceResponseError):
             raise SourceResponseError(
                 url,
-                status=getattr(http_error, "code", None),
-                content_length=None,
-                server=None,
+                status=http_error.status,
+                content_length=http_error.content_length,
+                server=http_error.server,
                 transport="http+playwright",
                 fallback_error=fallback,
             ) from browser_error
+        raise SourceResponseError(
+            url,
+            status=getattr(http_error, "code", None),
+            content_length=None,
+            server=None,
+            transport="http+playwright",
+            fallback_error=fallback,
+        ) from browser_error
 
 
 def _has_expected_source_markup(url: str, body: str) -> bool:
@@ -230,11 +255,11 @@ def _has_expected_source_markup(url: str, body: str) -> bool:
         return False
     parsed = urlparse(url)
     is_post = "/board/view" in parsed.path or bool(parse_qs(parsed.query).get("no")) or bool(re.search(r"/board/[^/]+/\d+", parsed.path))
-    markers = (
-        ("title_subject", "write_div", "articleBody", "thum-txtin")
-        if is_post
-        else ("gall_subject", "gall_tit", "gall-detail-lnktb", "/board/view/")
-    )
+    if not is_post:
+        parser = DCInsideHTMLParser()
+        parser.feed(body)
+        return bool(parser.list_rows)
+    markers = ("title_subject", "write_div", "articleBody", "thum-txtin")
     return any(marker in body for marker in markers)
 
 

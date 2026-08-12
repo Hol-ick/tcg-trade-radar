@@ -76,3 +76,22 @@ export function getJobResults(jobId: string, token: string) {
     token
   )
 }
+
+export async function downloadJobCsv(jobId: string, token: string) {
+  const headers = new Headers({ Accept: "text/csv" })
+  if (token.trim()) {
+    headers.set("Authorization", `Bearer ${token.trim()}`)
+  }
+  const response = await fetch(`${baseUrl}/jobs/${encodeURIComponent(jobId)}/csv`, { headers })
+  if (!response.ok) {
+    const message = await response.text()
+    throw new ApiError(message || `CSV 내보내기 실패 (${response.status})`, response.status)
+  }
+  const blob = await response.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = objectUrl
+  anchor.download = `tcg-trade-radar-${jobId}.csv`
+  anchor.click()
+  URL.revokeObjectURL(objectUrl)
+}

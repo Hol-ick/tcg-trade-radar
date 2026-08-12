@@ -82,6 +82,17 @@ python -m unittest discover -s tests -v
 python -m compileall -q kaitori_collector debug tests scripts
 ```
 
+## 웹 Dev 수집과 CSV 저장
+
+로컬 worker와 웹 화면을 함께 띄운 뒤 `http://127.0.0.1:5173/dev/`에서 작은 범위로 실제 수집을 실행할 수 있습니다.
+
+```powershell
+python -m kaitori_collector --serve --host 127.0.0.1 --port 8787 --db .audit\kaitori.sqlite3 --data-root data
+pnpm --dir web dev --host 127.0.0.1 --port 5173
+```
+
+작업이 `completed`이고 결과 행이 있으면 결과 카드의 `CSV 저장` 버튼으로 `tcg-trade-radar-<job-id>.csv`를 내려받습니다. `GET /jobs/<job-id>/csv`는 검토 상태를 변경하지 않고 추출 행만 UTF-8 CSV로 반환하며, 원문 HTML은 포함하지 않습니다. 목록 응답 구조가 일시적으로 인식되지 않으면 데스크톱 응답을 모바일·브라우저 fallback으로 확인하고 bounded retry를 적용합니다.
+
 수집 로그에 `원본 서버가 빈 응답을 반환했습니다`와 `status=200, content_length=0`이 표시되면 데스크톱 전송이 비어 모바일 읽기 경로로 전환되지 못한 상태입니다. 목록의 `판매·구매·거래` 글이 1페이지에 없을 수 있으므로 샘플 수집은 최근 5페이지까지 확인합니다. `python debug/probe_galleries.py --gallery tcggame`으로 갤러리별 응답을 확인할 수 있습니다. CAPTCHA나 차단 우회는 사용하지 않습니다.
 
 ## 범위와 주의사항
