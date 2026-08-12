@@ -1,3 +1,4 @@
+import gzip
 import unittest
 from unittest.mock import patch
 
@@ -36,6 +37,31 @@ class _EmptyResponse:
         return b""
 
 
+class _CompressedResponse:
+    status = 200
+
+    class _Headers:
+        def get_content_charset(self):
+            return "utf-8"
+
+        def get(self, name):
+            return {"Content-Encoding": "gzip", "Content-Length": "42", "Server": "nginx"}.get(name)
+
+    headers = _Headers()
+
+    def __init__(self, body):
+        self.body = gzip.compress(body)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return self.body
+
+
 class ParserTests(unittest.TestCase):
     def test_mobile_url_for_desktop_list_and_post(self):
         self.assertEqual(
@@ -59,6 +85,21 @@ class ParserTests(unittest.TestCase):
             with patch("kaitori_collector.parser.fetch_text_mobile", return_value=mobile_html) as mobile:
                 self.assertEqual(fetch_text_auto("https://example.test/list"), mobile_html)
                 mobile.assert_called_once()
+
+    def test_auto_transport_rejects_unrecognized_mobile_shape_before_browser(self):
+        mobile_html = "<!DOCTYPE html><html><body>challenge</body></html>"
+        browser_html = '<!DOCTYPE html><table><tr><td class="gall_subject">판매</td></tr></table>'
+        http_error = SourceResponseError(
+            "https://gall.dcinside.com/mgallery/board/lists?id=tcggame",
+            status=200,
+            content_length="0",
+            server="nginx",
+        )
+        with patch("kaitori_collector.parser.fetch_text", side_effect=http_error):
+            with patch("kaitori_collector.parser.fetch_text_mobile", return_value=mobile_html):
+                with patch("kaitori_collector.parser.fetch_text_browser", return_value=browser_html) as browser:
+                    self.assertEqual(fetch_text_auto(http_error.url), browser_html)
+                    browser.assert_called_once()
 
     def test_mobile_list_rows_are_parsed(self):
         html = '''
@@ -111,6 +152,11 @@ class ParserTests(unittest.TestCase):
         error = context.exception
         self.assertIn("status=200", str(error))
         self.assertEqual(error.as_dict()["content_length"], "0")
+
+    def test_fetch_text_decodes_gzip_http_response_before_parsing(self):
+        html = '<table><tr><td class="gall_subject">판매</td></tr></table>'.encode()
+        with patch("kaitori_collector.parser.urlopen", return_value=_CompressedResponse(html)):
+            self.assertEqual(fetch_text("https://example.test/list"), html.decode())
 
     def test_extract_post_keeps_public_author_marker(self):
         html = '''

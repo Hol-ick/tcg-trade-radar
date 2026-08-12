@@ -7,6 +7,7 @@ from pathlib import Path
 from socket import socket
 
 from kaitori_collector.api import WorkerApplication
+from kaitori_collector.contracts import JobRequest
 from kaitori_collector.server import make_handler
 from kaitori_collector.service import JobService
 from kaitori_collector.storage import Repository
@@ -37,6 +38,40 @@ class ServerTests(unittest.TestCase):
                 server.server_close()
                 repository.close()
                 thread.join(timeout=3)
+
+    def test_repository_serializes_job_and_polling_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Repository(Path(directory) / "kaitori.sqlite3")
+            request = JobRequest(gallery_id="tcggame")
+            job_id = repository.create_job(request)
+            barrier = threading.Barrier(2)
+            errors = []
+
+            def update_job():
+                try:
+                    barrier.wait()
+                    repository.update_job(job_id, state="running")
+                except Exception as error:  # pragma: no cover - assertion below reports it
+                    errors.append(error)
+
+            def poll_job():
+                try:
+                    barrier.wait()
+                    for _ in range(20):
+                        repository.get_job(job_id)
+                except Exception as error:  # pragma: no cover - assertion below reports it
+                    errors.append(error)
+
+            first = threading.Thread(target=update_job)
+            second = threading.Thread(target=poll_job)
+            first.start()
+            second.start()
+            first.join(timeout=3)
+            second.join(timeout=3)
+            self.assertFalse(first.is_alive() or second.is_alive())
+            self.assertEqual(errors, [])
+            self.assertEqual(repository.get_job(job_id)["state"], "running")
+            repository.close()
 
 
 if __name__ == "__main__":

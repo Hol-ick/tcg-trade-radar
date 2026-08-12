@@ -8,8 +8,17 @@ import { ResultTable } from "@/components/result-table"
 import { createJob, getHealth } from "@/lib/api"
 import { useJobPolling } from "@/hooks/use-job-polling"
 import type { JobRequest } from "@/lib/types"
+import { DevPage } from "@/dev-page"
 
 export function App() {
+  if (window.location.pathname === "/dev") {
+    return <DevPage />
+  }
+
+  return <Dashboard />
+}
+
+function Dashboard() {
   const [token, setToken] = useState("")
   const [jobId, setJobId] = useState<string | null>(null)
   const [health, setHealth] = useState<{ state: "checking" | "online" | "offline"; version?: string; message?: string }>({ state: "checking" })
@@ -47,6 +56,7 @@ export function App() {
           <div><div className="font-mono text-[10px] uppercase tracking-[0.25em] text-slate-500">TCG / TRADE RADAR</div><div className="font-semibold tracking-tight text-white">수집 관제판</div></div>
         </a>
         <div className="flex items-center gap-3 text-xs text-slate-400">
+          <a href="/dev" className="rounded-full border border-cyan-300/20 px-2.5 py-1 text-cyan-200 hover:bg-cyan-300/10">DEV</a>
           <span className={`status-dot ${health.state === "online" ? "status-online" : health.state === "offline" ? "status-offline" : "status-checking"}`} />
           <span>{health.state === "online" ? `worker online · ${health.version || "ready"}` : health.state === "offline" ? "worker 연결 필요" : "worker 확인 중"}</span>
         </div>

@@ -19,6 +19,8 @@ pnpm --dir web dev --host 127.0.0.1 --port 5173
 
 Open `http://127.0.0.1:5173`. Vite proxies `/api/*` to the local worker at `127.0.0.1:8787`.
 
+The development probe is available at `http://127.0.0.1:5173/dev` and is also published as a static GitHub Pages preview when the `Deploy web preview` workflow completes. The hosted preview is UI-only; live collection requires a worker endpoint configured with `VITE_WORKER_URL` and must not expose a local SQLite worker directly to the public internet.
+
 ## What the UI verifies
 
 - The worker health endpoint and version.

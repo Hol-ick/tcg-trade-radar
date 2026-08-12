@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import json
 import re
 import sys
 import time
+import zlib
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Callable
@@ -99,7 +101,7 @@ def fetch_text(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_USER_A
                 content_length=response.headers.get("Content-Length"),
                 server=response.headers.get("Server"),
             )
-    return payload.decode(encoding, errors="replace")
+    return _decode_http_payload(payload, response.headers.get("Content-Encoding"), encoding)
 
 
 def mobile_url_for(url: str) -> str:
@@ -149,6 +151,19 @@ def fetch_text_mobile(url: str, timeout: float = 20.0) -> str:
                 server=response.headers.get("Server"),
                 transport="mobile-http",
             )
+    return _decode_http_payload(payload, response.headers.get("Content-Encoding"), encoding)
+
+
+def _decode_http_payload(payload: bytes, content_encoding: str | None, encoding: str) -> str:
+    """Decode the compression explicitly; urllib does not transparently unzip bodies."""
+    compression = (content_encoding or "").lower().strip()
+    if compression == "gzip":
+        payload = gzip.decompress(payload)
+    elif compression == "deflate":
+        try:
+            payload = zlib.decompress(payload)
+        except zlib.error:
+            payload = zlib.decompress(payload, -zlib.MAX_WBITS)
     return payload.decode(encoding, errors="replace")
 
 
@@ -162,9 +177,24 @@ def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_U
     try:
         return fetch_text(url, timeout, user_agent)
     except (SourceResponseError, HTTPError) as http_error:
+        if isinstance(http_error, SourceResponseError) and http_error.content_length in (None, "", "0"):
+            try:
+                return fetch_text(url, timeout, user_agent)
+            except (SourceResponseError, HTTPError):
+                pass
         mobile_error: Exception | None = None
         try:
-            return fetch_text_mobile(url, max(timeout, 20.0))
+            mobile_body = fetch_text_mobile(url, max(timeout, 20.0))
+            if _has_expected_source_markup(url, mobile_body):
+                return mobile_body
+            mobile_error = SourceResponseError(
+                mobile_url_for(url),
+                status=200,
+                content_length=str(len(mobile_body)),
+                server="unknown",
+                transport="mobile-http",
+                fallback_error="response-shape-unrecognized",
+            )
         except (SourceResponseError, HTTPError, OSError) as error:
             mobile_error = error
         try:
@@ -190,6 +220,22 @@ def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_U
                 transport="http+playwright",
                 fallback_error=fallback,
             ) from browser_error
+
+
+def _has_expected_source_markup(url: str, body: str) -> bool:
+    """Reject non-empty challenge/error documents from a transport fallback."""
+    if "dcinside.com" not in urlparse(url).netloc.lower():
+        return True
+    if not body.lstrip().startswith(("<!DOCTYPE", "<html", "<HTML")):
+        return False
+    parsed = urlparse(url)
+    is_post = "/board/view" in parsed.path or bool(parse_qs(parsed.query).get("no")) or bool(re.search(r"/board/[^/]+/\d+", parsed.path))
+    markers = (
+        ("title_subject", "write_div", "articleBody", "thum-txtin")
+        if is_post
+        else ("gall_subject", "gall_tit", "gall-detail-lnktb", "/board/view/")
+    )
+    return any(marker in body for marker in markers)
 
 
 def fetch_comment_text_auto(

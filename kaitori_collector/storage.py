@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -173,6 +174,7 @@ CREATE INDEX IF NOT EXISTS kaitori_snapshot_game_date_idx ON kaitori_demand_snap
 
 class Repository:
     def __init__(self, path: Path | str) -> None:
+        self._thread_lock = threading.RLock()
         self.path = Path(path)
         if str(self.path) != ":memory:":
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -183,6 +185,19 @@ class Repository:
         self.connection.executescript(SCHEMA_SQL)
         self._ensure_market_columns()
         self.connection.commit()
+
+    def __getattribute__(self, name: str):
+        """Serialize public repository calls sharing the server's SQLite connection."""
+        attribute = object.__getattribute__(self, name)
+        if name.startswith("_") or name in {"connection", "path"} or not callable(attribute):
+            return attribute
+        lock = object.__getattribute__(self, "_thread_lock")
+
+        def synchronized(*args: Any, **kwargs: Any):
+            with lock:
+                return attribute(*args, **kwargs)
+
+        return synchronized
 
     def _ensure_market_columns(self) -> None:
         existing = {row[1] for row in self.connection.execute("PRAGMA table_info(kaitori_rows)").fetchall()}
