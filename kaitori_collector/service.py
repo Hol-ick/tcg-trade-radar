@@ -11,6 +11,7 @@ from urllib.parse import urljoin
 from . import __version__
 from .contracts import JobRequest, ReviewAction, utc_now
 from .html import DCInsideHTMLParser, parse_html, normalize_space
+from .observability import inspect_source_response, is_retryable_error, retry_delay
 from .parser import build_list_url, extract_post, fetch_text
 from .storage import Repository
 
@@ -50,6 +51,7 @@ class JobService:
                 "subjects": subjects,
                 "max_posts": request.max_posts,
                 "max_pages": request.max_pages,
+                "max_retries": request.max_retries,
             },
         )
         seen_urls: set[str] = set()
@@ -59,7 +61,9 @@ class JobService:
                 list_url = build_list_url(request.gallery_id, page, request.gallery_url)
                 self._log(job_id, step="list", message=f"목록 요청 시작 · {page}페이지", details={"url": list_url})
                 parser = DCInsideHTMLParser()
-                list_html = self.fetcher(list_url)
+                list_html = self._fetch_with_retry(job_id, list_url, request, "list")
+                profile = inspect_source_response(list_html, list_url, expected="list")
+                self._log(job_id, step="list", message=f"목록 응답 판별 · {profile.state}", details=profile.as_dict())
                 self._log(job_id, step="list", message=f"목록 응답 수신 · {len(list_html):,}자", details={"url": list_url, "characters": len(list_html)})
                 parser.feed(list_html)
                 all_rows = parser.list_rows
@@ -74,16 +78,16 @@ class JobService:
                     message=f"목록 파싱 완료 · 전체 {len(all_rows)}개 / {', '.join(subjects)} {len(candidates)}개",
                     details={"page": page, "all_rows": len(all_rows), "matching_rows": len(candidates), "subjects": subjects},
                 )
-                if not all_rows:
+                if profile.state != "ok" or not all_rows:
                     self._log(
                         job_id,
                         level="warning",
                         step="list",
-                        message="목록 글 행을 찾지 못함 · 차단 응답 또는 HTML 구조 변경 가능",
-                        details={"url": list_url, "characters": len(list_html)},
+                        message=f"목록 응답 이상 · {profile.reason}",
+                        details={"url": list_url, **profile.as_dict()},
                     )
                     if page == 1:
-                        raise RuntimeError("목록 글 행을 찾지 못했습니다. 요청 차단 또는 HTML 구조 변경 가능성이 있습니다.")
+                        raise RuntimeError(f"목록 응답을 사용할 수 없습니다: {profile.reason}")
                 elif not candidates:
                     self._log(job_id, step="list", message=f"{', '.join(subjects)} 말머리 글이 없음", details={"page": page})
                 for post_url in candidates:
@@ -92,7 +96,11 @@ class JobService:
                     seen_urls.add(post_url)
                     posts_seen += 1
                     self._log(job_id, step="post", message=f"게시글 요청 시작 · {posts_seen}/{request.max_posts}", details={"url": post_url})
-                    post_html = self.fetcher(post_url)
+                    post_html = self._fetch_with_retry(job_id, post_url, request, "post")
+                    post_profile = inspect_source_response(post_html, post_url, expected="post")
+                    self._log(job_id, step="post", message=f"게시글 응답 판별 · {post_profile.state}", details=post_profile.as_dict())
+                    if post_profile.state in {"empty", "blocked"}:
+                        raise RuntimeError(f"게시글 응답을 사용할 수 없습니다: {post_profile.reason}")
                     self._log(job_id, step="post", message=f"게시글 응답 수신 · {len(post_html):,}자", details={"url": post_url, "characters": len(post_html)})
                     document, _ = parse_html(post_html, post_url)
                     extracted_rows = extract_post(post_html, post_url, request.gallery_id, normalize_space(request.subject))
@@ -255,6 +263,18 @@ class JobService:
         details: dict[str, Any] | None = None,
     ) -> None:
         self.repository.add_job_log(job_id, level=level, step=step, message=message, details=details)
+
+    def _fetch_with_retry(self, job_id: str, url: str, request: JobRequest, step: str) -> str:
+        for attempt in range(request.max_retries + 1):
+            try:
+                return self.fetcher(url)
+            except Exception as exc:
+                if attempt >= request.max_retries or not is_retryable_error(exc):
+                    raise
+                wait = retry_delay(attempt)
+                self._log(job_id, level="warning", step=step, message=f"요청 재시도 대기 · {attempt + 1}/{request.max_retries}", details={"url": url, "error_type": type(exc).__name__, "delay_seconds": wait})
+                self.sleep(wait)
+        raise RuntimeError("unreachable fetch retry state")
 
 
 def _request_from_job(job: dict[str, Any]) -> JobRequest:

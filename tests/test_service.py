@@ -57,6 +57,28 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(service.get_job_status(job_id)["state"], "queued")
             repo.close()
 
+    def test_transient_fetch_error_is_retried_and_logged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            calls = {"list": 0}
+
+            def flaky_fetcher(url: str) -> str:
+                if "lists" in url:
+                    calls["list"] += 1
+                    if calls["list"] == 1:
+                        raise OSError("temporary connection reset")
+                    return LIST_HTML
+                return POST_HTML
+
+            service = JobService(repo, fetcher=flaky_fetcher, sleep=lambda _: None)
+            job_id = service.create_job(JobRequest(gallery_id="tcggame", max_retries=1), start=False)
+
+            status = service.run_job(job_id)
+
+            self.assertEqual(status["state"], "completed")
+            self.assertTrue(any("재시도" in log["message"] for log in service.get_logs(job_id)))
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

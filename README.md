@@ -49,6 +49,16 @@ python debug/run_week_collection.py
 python debug/run_week_collection.py --start-index 3
 ```
 
+## 갤러리 응답 사전 점검
+
+운영 DB나 작업 이력을 만들지 않고 여러 갤러리의 목록 응답·말머리·차단 여부만 확인하려면 다음을 실행합니다.
+
+```powershell
+python debug/probe_galleries.py --gallery tcggame --gallery onepiececardgame --gallery pokemoncardgame --gallery digimontcg --gallery vg
+```
+
+이 점검은 응답이 비었거나 HTML 구조가 바뀐 경우를 `게시글 없음`으로 오인하지 않도록 상태를 구분해 JSON으로 출력합니다.
+
 ## 개발 확인
 
 ```powershell
