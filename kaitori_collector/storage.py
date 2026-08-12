@@ -322,6 +322,13 @@ class Repository:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             values,
         )
+        self.connection.execute(
+            """UPDATE kaitori_sources
+               SET author_name = CASE WHEN ? <> '' THEN ? ELSE author_name END,
+                   author_type = CASE WHEN ? <> 'unknown' THEN ? ELSE author_type END
+               WHERE id = ?""",
+            (values[6], values[6], values[7], values[7], source_id),
+        )
         self.connection.commit()
         return source_id, cursor.rowcount == 1
 

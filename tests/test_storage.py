@@ -46,6 +46,9 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(first_source_id, second_source_id)
             self.assertTrue(inserted)
             self.assertFalse(inserted_again)
+            repo.upsert_source({**source, "author_name": "카드상인", "author_type": "registered"})
+            self.assertEqual(repo.get_source(first_source_id)["author_name"], "카드상인")
+            self.assertEqual(repo.get_source(first_source_id)["author_type"], "registered")
             self.assertEqual(repo.insert_rows(job_id, first_source_id, [sample_row()]), 1)
             self.assertEqual(repo.insert_rows(job_id, first_source_id, [sample_row()]), 0)
 
