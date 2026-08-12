@@ -1,0 +1,74 @@
+"""HTTP-independent route application used by the JSON worker server and tests."""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+from . import __version__
+from .contracts import JobRequest, ReviewAction
+from .service import JobService
+
+
+@dataclass(frozen=True)
+class ApiResponse:
+    status: int
+    body: Any
+    content_type: str = "application/json; charset=utf-8"
+
+
+class WorkerApplication:
+    def __init__(self, service: JobService, *, api_token: str = "", start_jobs: bool = True) -> None:
+        self.service = service
+        self.api_token = api_token.strip()
+        self.start_jobs = start_jobs
+
+    def request(self, method: str, path: str, payload: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> ApiResponse:
+        headers = {key.lower(): value for key, value in (headers or {}).items()}
+        parsed = urlparse(path)
+        route = parsed.path.rstrip("/") or "/"
+        if method.upper() == "OPTIONS":
+            return ApiResponse(204, None)
+        if route == "/health" and method.upper() == "GET":
+            return ApiResponse(200, {"version": __version__})
+        if not self._authorized(headers):
+            return ApiResponse(401, {"error": "authorization required"})
+        try:
+            return self._route(method.upper(), route, parse_qs(parsed.query), payload or {})
+        except KeyError as exc:
+            return ApiResponse(404, {"error": str(exc).strip("'")})
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            return ApiResponse(400, {"error": str(exc)})
+        except Exception as exc:  # keep server alive and avoid leaking internals
+            return ApiResponse(500, {"error": str(exc)[:500]})
+
+    def _route(self, method: str, route: str, query: dict[str, list[str]], payload: dict[str, Any]) -> ApiResponse:
+        if route == "/jobs" and method == "POST":
+            request = JobRequest.from_dict(payload)
+            job_id = self.service.create_job(request, start=self.start_jobs)
+            return ApiResponse(202, {"job_id": job_id, "id": job_id})
+
+        parts = [part for part in route.split("/") if part]
+        if len(parts) == 2 and parts[0] == "jobs" and method == "GET":
+            return ApiResponse(200, self.service.get_job_status(parts[1]))
+        if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "logs" and method == "GET":
+            limit = int(query.get("limit", ["500"])[0])
+            return ApiResponse(200, {"job_id": parts[1], "logs": self.service.get_logs(parts[1], limit=limit)})
+        if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "results" and method == "GET":
+            approved_only = query.get("approved_only", ["false"])[0].lower() == "true"
+            return ApiResponse(200, {"job_id": parts[1], "rows": self.service.get_results(parts[1], approved_only=approved_only)})
+        if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "retry" and method == "POST":
+            self.service.retry_job(parts[1], start=self.start_jobs)
+            return ApiResponse(202, {"job_id": parts[1], "id": parts[1]})
+        if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "export" and method == "POST":
+            return ApiResponse(200, {"job_id": parts[1], "rows": self.service.export_results(parts[1])})
+        if len(parts) == 3 and parts[0] == "rows" and parts[2] == "review" and method == "POST":
+            action = ReviewAction.from_dict(payload)
+            return ApiResponse(200, self.service.review_row(parts[1], action))
+        return ApiResponse(404, {"error": "route not found"})
+
+    def _authorized(self, headers: dict[str, str]) -> bool:
+        if not self.api_token:
+            return True
+        return headers.get("authorization", "") == f"Bearer {self.api_token}"

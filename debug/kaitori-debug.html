@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaitori Collector</title>
+  <style>
+    :root {
+      --ink: #17212b;
+      --muted: #718096;
+      --line: #e2e8f0;
+      --paper: #fff;
+      --canvas: #f3f5f7;
+      --blue: #2563d8;
+      --blue-soft: #eef4ff;
+      --green: #16824a;
+      --green-soft: #eaf8f0;
+      --red: #c53d3d;
+      --red-soft: #fff0f0;
+      --amber: #a66400;
+      --amber-soft: #fff6e6;
+      --shadow: 0 12px 28px rgba(20, 35, 50, .07);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--canvas); }
+    body { color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .48; }
+    a { color: var(--blue); }
+
+    .topbar { height: 58px; display: flex; align-items: center; justify-content: space-between; padding: 0 26px; background: var(--paper); border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 900; letter-spacing: .12em; }
+    .brand-mark { display: grid; place-items: center; width: 28px; height: 28px; color: #fff; background: var(--ink); border-radius: 8px; font-size: 11px; letter-spacing: -.08em; }
+    .connection { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 800; }
+    .connection-dot { width: 8px; height: 8px; border-radius: 50%; background: #b5c0cb; }
+    .connection.ok { color: var(--green); }
+    .connection.ok .connection-dot { background: var(--green); }
+    .connection.error { color: var(--red); }
+    .connection.error .connection-dot { background: var(--red); }
+
+    .page { width: min(1180px, calc(100% - 36px)); margin: 0 auto; padding: 24px 0 48px; }
+    .grid { display: grid; grid-template-columns: minmax(340px, .82fr) minmax(0, 1.18fr); gap: 16px; align-items: start; }
+    .card { overflow: hidden; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+    .card-head h1, .card-head h2 { margin: 0; font-size: 16px; letter-spacing: -.025em; }
+    .card-head h1 { font-size: 18px; }
+    .card-head .count { color: var(--muted); font-size: 12px; font-weight: 800; }
+    .card-body { padding: 18px 20px 20px; }
+
+    .game-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+    .game-option { min-height: 56px; padding: 0 13px; color: #344252; text-align: left; background: #fff; border: 1px solid #d5dee7; border-radius: 10px; transition: border-color .15s, background .15s, box-shadow .15s; }
+    .game-option strong { display: block; font-size: 13px; }
+    .game-option:hover:not(:disabled) { border-color: #8ca9d8; background: #fbfdff; }
+    .game-option.selected { color: var(--blue); background: var(--blue-soft); border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+
+    .collection-row { display: grid; grid-template-columns: 1fr 1.25fr; gap: 9px; margin-top: 15px; }
+    .field { display: grid; gap: 6px; }
+    label { color: #435161; font-size: 11px; font-weight: 900; }
+    input, select { width: 100%; min-height: 42px; padding: 0 11px; color: var(--ink); background: #fff; border: 1px solid #cfd9e3; border-radius: 8px; outline: 0; }
+    input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37, 99, 216, .13); }
+    .button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 15px; border: 1px solid transparent; border-radius: 8px; font-weight: 900; transition: background .15s, transform .15s; }
+    .button:active:not(:disabled) { transform: translateY(1px); }
+    .button.primary { color: #fff; background: var(--blue); }
+    .button.primary:hover:not(:disabled) { background: #1d4fae; }
+    .button.secondary { color: #334252; background: #fff; border-color: #cfd9e3; }
+    .button.secondary:hover:not(:disabled) { background: #f7f9fb; }
+    .button.positive { color: #fff; background: var(--green); }
+    .button.negative { color: var(--red); background: var(--red-soft); border-color: #efc2c2; }
+    .button.small { min-height: 31px; padding: 0 10px; font-size: 12px; }
+    .start-button { width: 100%; margin-top: 14px; }
+
+    details.settings { margin-top: 17px; padding-top: 14px; border-top: 1px solid var(--line); }
+    details.settings summary { color: #536271; cursor: pointer; font-size: 11px; font-weight: 900; }
+    .settings-grid { display: grid; grid-template-columns: 1fr 150px; gap: 9px; margin-top: 12px; }
+    .settings-actions { display: flex; align-items: center; gap: 9px; margin-top: 9px; }
+    .settings-status { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .job-card { min-height: 100%; }
+    .job-top { padding: 20px; color: #fff; background: linear-gradient(135deg, #162637, #274b6c); }
+    .job-state { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .state { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 900; }
+    .state::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #aab7c4; }
+    .state.running::before { background: #ffd166; box-shadow: 0 0 0 4px rgba(255, 209, 102, .16); }
+    .state.completed::before { background: #6ee7a2; }
+    .state.failed::before { background: #ff8a85; }
+    .job-id { color: #b4c4d4; font-size: 11px; }
+    .target-name { margin-top: 18px; font-size: 19px; font-weight: 900; letter-spacing: -.04em; }
+    .target-id { margin-top: 2px; color: #adc0d3; font-size: 11px; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 18px; }
+    .metric { padding: 10px; background: rgba(255,255,255,.09); border: 1px solid rgba(255,255,255,.09); border-radius: 8px; }
+    .metric span { display: block; color: #b8c9d9; font-size: 10px; }
+    .metric strong { display: block; margin-top: 2px; color: #fff; font-size: 21px; letter-spacing: -.05em; }
+    .job-body { padding: 0 20px 20px; }
+    .logs-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 9px; }
+    .logs-head strong { font-size: 12px; }
+    .log-box { height: 214px; overflow: auto; padding: 11px 12px; color: #cdd8e3; background: #111c27; border-radius: 8px; font: 11px/1.55 Consolas, "D2Coding", monospace; }
+    .log-line { display: grid; grid-template-columns: 58px 48px 1fr; gap: 7px; padding: 2px 0; }
+    .log-time { color: #7f92a5; }
+    .log-level { color: #8db7e9; }
+    .log-line.warning .log-level { color: #ffd166; }
+    .log-line.error .log-level { color: #ff8d87; }
+    .log-message { overflow-wrap: anywhere; }
+    .log-empty { color: #73879b; }
+    .job-actions { display: flex; gap: 8px; margin-top: 13px; }
+    .job-actions .button { flex: 1; }
+
+    .results-card { margin-top: 16px; }
+    .results-tools { display: flex; align-items: center; gap: 8px; }
+    .results-tools select { width: auto; min-height: 32px; padding-right: 25px; font-size: 12px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; min-width: 790px; border-collapse: collapse; }
+    th, td { padding: 12px 14px; text-align: left; border-top: 1px solid #edf0f3; vertical-align: middle; }
+    th { color: var(--muted); background: #fafbfc; font-size: 10px; font-weight: 900; white-space: nowrap; }
+    td { color: #344252; font-size: 12px; }
+    .card-cell strong, .card-cell small { display: block; max-width: 255px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card-cell strong { color: var(--ink); font-size: 13px; }
+    .card-cell small { margin-top: 2px; color: var(--muted); }
+    .price { color: var(--ink); font-weight: 900; white-space: nowrap; }
+    .status { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 900; white-space: nowrap; }
+    .status.parsed, .status.needs_review { color: var(--amber); background: var(--amber-soft); }
+    .status.approved, .status.exported { color: var(--green); background: var(--green-soft); }
+    .status.rejected { color: var(--red); background: var(--red-soft); }
+    .empty { padding: 42px; color: var(--muted); text-align: center; }
+    .empty[hidden] { display: none; }
+
+    @media (max-width: 820px) {
+      .topbar { padding: 0 17px; }
+      .page { width: min(100% - 26px, 600px); padding-top: 16px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 520px) {
+      .game-grid { grid-template-columns: 1fr 1fr; }
+      .collection-row, .settings-grid { grid-template-columns: 1fr; }
+      .card-head, .card-body, .job-top, .job-body { padding-left: 16px; padding-right: 16px; }
+      .connection span:last-child { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">K.</span><span>KAITORI</span></div>
+    <div id="connectionStatus" class="connection"><span class="connection-dot"></span><span id="connectionText">수집 서버 연결 안 됨</span></div>
+  </header>
+
+  <main class="page">
+    <section class="grid">
+      <article class="card">
+        <div class="card-head"><h1>수집</h1><span id="selectedLabel" class="count">유희왕</span></div>
+        <div class="card-body">
+          <div id="gameGrid" class="game-grid"></div>
+          <div class="collection-row">
+            <div class="field"><label for="postLimit">최근 글 수</label><input id="postLimit" type="number" value="20" min="1" max="200" inputmode="numeric"></div>
+            <button id="collectBtn" class="button primary start-button" type="button">수집 시작</button>
+          </div>
+          <details class="settings">
+            <summary>수집 서버 설정</summary>
+            <div class="settings-grid">
+              <div class="field"><label for="workerUrl">수집 서버 주소</label><input id="workerUrl" type="url" value="http://127.0.0.1:8787" spellcheck="false"></div>
+              <div class="field"><label for="workerToken">API 토큰</label><input id="workerToken" type="password" autocomplete="off"></div>
+            </div>
+            <div class="settings-actions"><button id="checkBtn" class="button secondary small" type="button">연결 확인</button><span id="settingsStatus" class="settings-status">-</span></div>
+          </details>
+        </div>
+      </article>
+
+      <article class="card job-card">
+        <div class="job-top">
+          <div class="job-state"><span id="stateLabel" class="state">대기 중</span><span id="runId" class="job-id">-</span></div>
+          <div id="targetName" class="target-name">유희왕</div>
+          <div id="targetId" class="target-id">tcggame</div>
+          <div class="metrics">
+            <div class="metric"><span>읽은 글</span><strong id="sourceCount">0</strong></div>
+            <div class="metric"><span>결과</span><strong id="rowCount">0</strong></div>
+            <div class="metric"><span>검토 대기</span><strong id="reviewCount">0</strong></div>
+          </div>
+        </div>
+        <div class="job-body">
+          <div class="logs-head"><strong>로그</strong><div style="display:flex;gap:6px"><button id="copyLogsBtn" class="button secondary small" type="button">전체 복사</button><button id="refreshLogsBtn" class="button secondary small" type="button" disabled>새로고침</button></div></div>
+          <div id="logBox" class="log-box"><div class="log-empty">-</div></div>
+          <div class="job-actions"><button id="newCollectionBtn" class="button secondary" type="button" disabled>새 수집</button><button id="exportBtn" class="button positive" type="button" disabled>승인 결과 내보내기</button></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="card results-card">
+      <div class="card-head"><div style="display:flex;align-items:baseline;gap:8px"><h2>결과</h2><span id="resultCount" class="count">0건</span></div><div class="results-tools"><select id="resultFilter" aria-label="결과 필터"><option value="all">전체</option><option value="pending">검토 대기</option><option value="approved">승인</option><option value="rejected">반려</option></select><button id="downloadCsvBtn" class="button secondary small" type="button" disabled>CSV</button></div></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>#</th><th>카드 / 원문</th><th>판매가</th><th>매입가</th><th>수량</th><th>배송</th><th>상태</th><th>조치</th></tr></thead><tbody id="resultsBody"></tbody></table>
+        <div id="emptyResults" class="empty">결과 없음</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const PRESETS = [
+        { name: "유희왕", id: "tcggame", url: "https://gall.dcinside.com/mgallery/board/lists?id=tcggame" },
+        { name: "원피스 카드게임", id: "onepiececardgame", url: "https://gall.dcinside.com/mgallery/board/lists?id=onepiececardgame" },
+        { name: "포켓몬 카드게임", id: "pokemoncardgame", url: "https://gall.dcinside.com/mgallery/board/lists?id=pokemoncardgame" },
+        { name: "디지몬 카드게임", id: "digimontcg", url: "https://gall.dcinside.com/mgallery/board/lists?id=digimontcg" },
+        { name: "뱅가드", id: "vg", url: "https://gall.dcinside.com/mgallery/board/lists?id=vg" },
+      ];
+      const $ = (id) => document.getElementById(id);
+      const state = { selected: 0, connected: false, busy: false, target: null, currentJob: null, results: [], logs: [], filter: "all" };
+
+      function clamp(value, min, max, fallback) {
+        const number = Number(value);
+        return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
+      }
+      function workerBase() { return $("workerUrl").value.trim().replace(/\/+$/, ""); }
+      function escapeHtml(value) { const node = document.createElement("span"); node.textContent = value == null ? "" : String(value); return node.innerHTML; }
+      function money(value) { return Number(value) > 0 ? `${Number(value).toLocaleString("ko-KR")}원` : "-"; }
+      function shipping(value) { return { included: "포함", separate: "별도", unknown: "미확인" }[value] || "미확인"; }
+      function pending(row) { return ["parsed", "needs_review"].includes(row.review_status); }
+      function statusText(value) { return { parsed: "검토 대기", needs_review: "검토 대기", approved: "승인", rejected: "반려", exported: "내보냄" }[value] || value || "확인 필요"; }
+
+      function renderGames() {
+        $("gameGrid").innerHTML = PRESETS.map((game, index) => `<button class="game-option${index === state.selected ? " selected" : ""}" type="button" data-game-index="${index}" ${state.busy ? "disabled" : ""}><strong>${escapeHtml(game.name)}</strong></button>`).join("");
+        const game = PRESETS[state.selected];
+        $("selectedLabel").textContent = game.name;
+        $("targetName").textContent = game.name;
+        $("targetId").textContent = game.id;
+      }
+
+      function setConnection(kind, text) { const node = $("connectionStatus"); node.className = `connection ${kind || ""}`.trim(); $("connectionText").textContent = text; }
+      function setSettings(text, color) { $("settingsStatus").textContent = text; $("settingsStatus").style.color = color || ""; }
+      function setState(text, kind) { const node = $("stateLabel"); node.textContent = text; node.className = `state ${kind || ""}`.trim(); }
+      function target() { const game = PRESETS[state.selected]; return { ...game, maxPosts: clamp($("postLimit").value, 1, 200, 20) }; }
+
+      async function request(path, options = {}) {
+        const headers = { Accept: "application/json", ...(options.headers || {}) };
+        if (options.body !== undefined) headers["Content-Type"] = "application/json";
+        const token = $("workerToken").value.trim();
+        if (token) headers.Authorization = `Bearer ${token}`;
+        let response;
+        const url = `${workerBase()}${path}`;
+        try { response = await fetch(url, { ...options, headers }); }
+        catch (error) { throw new Error(`수집 서버에 연결할 수 없습니다: ${url} · 서버가 실행 중인지 확인하세요.`); }
+        const text = await response.text();
+        let payload = {};
+        try { payload = text ? JSON.parse(text) : {}; } catch { payload = { error: text }; }
+        if (!response.ok) {
+          if (response.status === 401) throw new Error(`API 토큰이 맞지 않습니다: ${url}`);
+          if (response.status === 404) throw new Error(`수집 서버에 필요한 경로가 없습니다: ${url} · 실행 중인 서버 버전을 확인하세요.`);
+          throw new Error(payload.error || payload.message || `수집 서버 요청 실패 (${response.status}): ${url}`);
+        }
+        return payload;
+      }
+
+      async function checkHealth(silent = false) {
+        setConnection("", "연결 확인 중");
+        if (!silent) setSettings("확인 중...");
+        try {
+          const health = await request("/health");
+          state.connected = true;
+          setConnection("ok", `수집 서버 ${health.version || "연결됨"}`);
+          setSettings(`연결됨 · ${health.version || "-"}`, "var(--green)");
+          return true;
+        } catch (error) {
+          state.connected = false;
+          setConnection("error", "서버 꺼짐");
+          setSettings(error.message, "var(--red)");
+          return false;
+        }
+      }
+
+      function logDetails(details) {
+        if (!details || typeof details !== "object") return "";
+        const keys = ["url", "characters", "body_characters", "images", "all_rows", "matching_rows", "rows", "inserted", "posted_at", "error"];
+        return keys.filter((key) => details[key] !== undefined && details[key] !== "").map((key) => `${key}=${details[key]}`).join(" · ");
+      }
+      function logTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value || "").slice(-8) : date.toLocaleTimeString("ko-KR", { hour12: false }); }
+      function renderLogs() {
+        const box = $("logBox");
+        if (!state.logs.length) { box.innerHTML = "<div class=\"log-empty\">-</div>"; return; }
+        box.innerHTML = state.logs.map((log) => {
+          const detail = logDetails(log.details);
+          return `<div class="log-line ${escapeHtml(log.level)}"><span class="log-time">${escapeHtml(logTime(log.created_at))}</span><span class="log-level">${escapeHtml(log.level.toUpperCase())}</span><span class="log-message">${escapeHtml(log.message)}${detail ? ` <span style="color:#8094a8">· ${escapeHtml(detail)}</span>` : ""}</span></div>`;
+        }).join("");
+        box.scrollTop = box.scrollHeight;
+      }
+      async function fetchLogs() {
+        if (!state.currentJob?.id) return;
+        try { const payload = await request(`/jobs/${encodeURIComponent(state.currentJob.id)}/logs?limit=500`); state.logs = payload.logs || []; renderLogs(); }
+        catch (error) { state.logs = [...state.logs, { created_at: new Date().toISOString(), level: "error", message: `로그 조회 실패: ${error.message}`, details: {} }]; renderLogs(); }
+      }
+      function logText() {
+        if (!state.logs.length) return "";
+        return state.logs.map((log) => {
+          const details = logDetails(log.details);
+          return `[${logTime(log.created_at)}] ${String(log.level || "info").toUpperCase()} ${log.message}${details ? ` · ${details}` : ""}`;
+        }).join("\n");
+      }
+      async function copyLogs() {
+        const text = logText();
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+          $("copyLogsBtn").textContent = "복사됨";
+        } catch {
+          const area = document.createElement("textarea");
+          area.value = text; area.style.position = "fixed"; area.style.opacity = "0";
+          document.body.appendChild(area); area.select(); document.execCommand("copy"); area.remove();
+          $("copyLogsBtn").textContent = "복사됨";
+        }
+        setTimeout(() => { $("copyLogsBtn").textContent = "전체 복사"; }, 1300);
+      }
+
+      function normalize(row) {
+        return { ...row, card_name: row.card_name || row.card_name_raw || "이름 미확인", card_name_raw: row.card_name_raw || row.card_name || "", source_url: row.source_url || row.post_url || "", price_krw: Number(row.price_krw ?? row.price ?? 0), buy_price_krw: Number(row.buy_price_krw ?? row.buy_price ?? 0), quantity: row.quantity ?? 1, shipping_included: row.shipping_included || "unknown", review_status: row.review_status || row.status || "parsed" };
+      }
+      function visibleResults() {
+        if (state.filter === "pending") return state.results.filter(pending);
+        if (state.filter === "approved") return state.results.filter((row) => ["approved", "exported"].includes(row.review_status));
+        if (state.filter === "rejected") return state.results.filter((row) => row.review_status === "rejected");
+        return state.results;
+      }
+      function renderResults() {
+        const waiting = state.results.filter(pending).length;
+        $("resultCount").textContent = `${state.results.length}건`;
+        $("sourceCount").textContent = String(state.currentJob?.counts?.sources ?? 0);
+        $("rowCount").textContent = String(state.results.length || state.currentJob?.counts?.rows || 0);
+        $("reviewCount").textContent = String(waiting || state.currentJob?.counts?.needs_review || 0);
+        $("downloadCsvBtn").disabled = state.results.length === 0;
+        const rows = visibleResults();
+        $("emptyResults").hidden = rows.length > 0;
+        $("resultsBody").innerHTML = rows.map((row, index) => {
+          const status = row.review_status;
+          const source = row.source_url && /^https?:\/\//i.test(row.source_url) ? `<a href="${escapeHtml(row.source_url)}" target="_blank" rel="noopener">원문</a>` : "-";
+          const action = pending(row) ? `<div style="display:flex;gap:5px"><button class="button positive small" data-action="approve" data-row-id="${escapeHtml(row.id)}">승인</button><button class="button negative small" data-action="reject" data-row-id="${escapeHtml(row.id)}">반려</button></div>` : `<span style="color:var(--muted);font-size:11px">완료</span>`;
+          return `<tr><td>${index + 1}</td><td><div class="card-cell"><strong title="${escapeHtml(row.card_name)}">${escapeHtml(row.card_name)}</strong><small title="${escapeHtml(row.title || row.card_name_raw || "")}">${escapeHtml(row.title || row.card_name_raw || "")}</small></div></td><td class="price">${money(row.price_krw)}</td><td class="price">${money(row.buy_price_krw)}</td><td>${escapeHtml(row.quantity)}</td><td>${escapeHtml(shipping(row.shipping_included))}</td><td><span class="status ${escapeHtml(status)}">${escapeHtml(statusText(status))}</span></td><td>${action}<div style="margin-top:4px;font-size:11px">${source}</div></td></tr>`;
+        }).join("");
+      }
+      function updateJobView(job) {
+        const name = job.state || "queued";
+        const label = { queued: "대기 중", running: "수집 중", completed: "완료", failed: "실패" }[name] || name;
+        setState(label, name === "running" ? "running" : name === "completed" ? "completed" : name === "failed" ? "failed" : "");
+        $("runId").textContent = job.id ? `#${String(job.id).slice(0, 8)}` : "-";
+        $("newCollectionBtn").disabled = state.busy || !state.currentJob;
+        $("exportBtn").disabled = state.busy || !state.results.some((row) => ["approved", "exported"].includes(row.review_status));
+        renderResults();
+      }
+      async function fetchResults() {
+        if (!state.currentJob?.id) return;
+        const payload = await request(`/jobs/${encodeURIComponent(state.currentJob.id)}/results`);
+        state.results = (payload.rows || payload.results || []).map(normalize);
+        renderResults();
+      }
+      function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+      async function poll(jobId) {
+        for (let attempt = 0; attempt < 180; attempt += 1) {
+          const job = await request(`/jobs/${encodeURIComponent(jobId)}`);
+          state.currentJob = { ...state.currentJob, ...job };
+          updateJobView(state.currentJob);
+          await fetchLogs();
+          if (["completed", "failed"].includes(job.state)) { if (job.state === "completed") await fetchResults(); await fetchLogs(); return; }
+          await wait(1200);
+        }
+        throw new Error("작업 상태 확인 시간 초과");
+      }
+      async function createJob() {
+        if (state.busy) return;
+        state.busy = true;
+        state.target = target();
+        state.currentJob = null;
+        state.results = [];
+        state.logs = [];
+        renderGames();
+        renderLogs();
+        renderResults();
+        setState("연결 확인 중", "running");
+        $("collectBtn").disabled = true;
+        try {
+          if (!state.connected && !(await checkHealth(true))) throw new Error(`수집을 시작할 수 없습니다: ${$("settingsStatus").textContent}`);
+          const payload = await request("/jobs", { method: "POST", body: JSON.stringify({ gallery_id: state.target.id, gallery_url: state.target.url, subject: "판매", max_posts: state.target.maxPosts, max_pages: Math.min(20, Math.max(1, Math.ceil(state.target.maxPosts / 50))), delay: 1.0, buy_rate: 60, keep_raw: true, review_unmatched: true }) });
+          state.currentJob = { id: payload.job_id || payload.id, state: "queued", counts: {} };
+          if (!state.currentJob.id) throw new Error("작업 ID 없음");
+          updateJobView(state.currentJob);
+          await poll(state.currentJob.id);
+        } catch (error) {
+          state.logs = [...state.logs, { created_at: new Date().toISOString(), level: "error", message: error.message, details: {} }];
+          renderLogs();
+          setState("실패", "failed");
+        } finally {
+          state.busy = false;
+          $("collectBtn").disabled = false;
+          renderGames();
+          updateJobView(state.currentJob || {});
+        }
+      }
+      async function reviewRow(rowId, action) {
+        if (state.busy) return;
+        state.busy = true;
+        try { await request(`/rows/${encodeURIComponent(rowId)}/review`, { method: "POST", body: JSON.stringify({ action, actor: "admin" }) }); await fetchResults(); }
+        catch (error) { state.logs = [...state.logs, { created_at: new Date().toISOString(), level: "error", message: error.message, details: {} }]; renderLogs(); }
+        finally { state.busy = false; updateJobView(state.currentJob || {}); }
+      }
+      async function exportApproved() {
+        if (!state.currentJob?.id || state.busy) return;
+        state.busy = true;
+        try { const payload = await request(`/jobs/${encodeURIComponent(state.currentJob.id)}/export`, { method: "POST", body: JSON.stringify({}) }); state.results = (payload.rows || payload.results || []).map(normalize); renderResults(); }
+        catch (error) { state.logs = [...state.logs, { created_at: new Date().toISOString(), level: "error", message: error.message, details: {} }]; renderLogs(); }
+        finally { state.busy = false; updateJobView(state.currentJob || {}); }
+      }
+      function downloadCsv() {
+        if (!state.results.length) return;
+        const headers = ["게임명", "카드명", "원문명", "판매가", "매입가", "수량", "배송", "상태", "원문 URL"];
+        const values = state.results.map((row) => [state.target?.name || PRESETS[state.selected].name, row.card_name, row.title || row.card_name_raw || "", row.price_krw || "", row.buy_price_krw || "", row.quantity ?? "", shipping(row.shipping_included), statusText(row.review_status), row.source_url || ""]);
+        const csv = [headers, ...values].map((line) => line.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",")).join("\r\n");
+        const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" })); link.download = `kaitori-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
+      }
+      function resetCollection() { state.currentJob = null; state.target = null; state.results = []; state.logs = []; setState("대기 중", ""); $("runId").textContent = "-"; renderLogs(); renderResults(); updateJobView({}); }
+
+      $("gameGrid").addEventListener("click", (event) => { const button = event.target.closest("button[data-game-index]"); if (!button || state.busy) return; state.selected = Number(button.dataset.gameIndex); renderGames(); });
+      $("collectBtn").addEventListener("click", createJob);
+      $("checkBtn").addEventListener("click", () => checkHealth(false));
+      $("copyLogsBtn").addEventListener("click", copyLogs);
+      $("refreshLogsBtn").addEventListener("click", fetchLogs);
+      $("newCollectionBtn").addEventListener("click", resetCollection);
+      $("exportBtn").addEventListener("click", exportApproved);
+      $("downloadCsvBtn").addEventListener("click", downloadCsv);
+      $("resultFilter").addEventListener("change", (event) => { state.filter = event.target.value; renderResults(); });
+      $("resultsBody").addEventListener("click", (event) => { const button = event.target.closest("button[data-action]"); if (button) reviewRow(button.dataset.rowId, button.dataset.action); });
+      $("workerUrl").addEventListener("input", () => { state.connected = false; setConnection("", "수집 서버 연결 안 됨"); });
+      $("workerToken").addEventListener("input", () => { state.connected = false; setConnection("", "수집 서버 연결 안 됨"); });
+
+      renderGames();
+      renderResults();
+      window.kaitoriCollector = { PRESETS, state, checkHealth, createJob, fetchLogs, resetCollection };
+    })();
+  </script>
+</body>
+</html>

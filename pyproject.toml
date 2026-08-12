@@ -1,0 +1,9 @@
+[project]
+name = "tcg-trade-radar"
+version = "0.1.0"
+description = "DCInside TCG user trade market explorer"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+kaitori-collector = "kaitori_collector.cli:main"
