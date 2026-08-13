@@ -5,6 +5,8 @@ data/
 !web/public/data/
 !web/public/data/weeks/
 !web/public/data/weeks/**
+!web/public/data/collections/
+!web/public/data/collections/**
 .audit/
 *.sqlite3
 *.sqlite3-shm
