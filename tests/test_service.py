@@ -10,11 +10,18 @@ from kaitori_collector.storage import Repository
 LIST_HTML = """
 <table><tr><td class="gall_subject">판매</td><td><a class="gall_tit" href="/mgallery/board/view/?id=tcggame&amp;no=1">첫 글</a></td></tr></table>
 """
+LIST_PAGE_2_HTML = """
+<table><tr><td class="gall_subject">판매</td><td><a class="gall_tit" href="/mgallery/board/view/?id=tcggame&amp;no=2">오래된 글</a></td></tr></table>
+"""
+LIST_PAGE_3_HTML = """
+<table><tr><td class="gall_subject">판매</td><td><a class="gall_tit" href="/mgallery/board/view/?id=tcggame&amp;no=3">더 오래된 글</a></td></tr></table>
+"""
 POST_HTML = """
 <html><head><input type="hidden" name="ci_t" value="fixture-token"><script type="application/ld+json">
 {"headline":"판매 카드","datePublished":"2026-08-12T10:00:00+09:00","articleBody":"블루아이즈 울레 35,000원 택포"}
 </script></head><body><span class="title_subject">판매 카드</span><div class="write_div">블루아이즈 울레 35,000원 택포</div></body></html>
 """
+OLD_POST_HTML = POST_HTML.replace("2026-08-12T10:00:00+09:00", "2026-05-12T10:00:00+09:00")
 COMMENT_HTML = """
 <div class="gallery_re_contents"><table><tr class="reply_line">
 <td class="user user_layer" user_name="거래상대" user_id="dealer01">거래상대</td>
@@ -33,6 +40,44 @@ MOBILE_POST_WITH_COMMENTS = """
 
 
 class JobServiceTests(unittest.TestCase):
+    def test_backfill_stops_after_a_page_wholly_older_than_since(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            calls: list[str] = []
+
+            def fetcher(url: str) -> str:
+                calls.append(url)
+                if "lists" in url:
+                    if "page=2" in url:
+                        return LIST_PAGE_2_HTML
+                    if "page=3" in url:
+                        return LIST_PAGE_3_HTML
+                    return LIST_HTML
+                if "no=2" in url:
+                    return OLD_POST_HTML
+                return POST_HTML
+
+            service = JobService(repo, fetcher=fetcher, sleep=lambda _: None)
+            request = JobRequest(
+                gallery_id="tcggame",
+                subject="판매",
+                subjects=("판매",),
+                since="2026-05-13",
+                until="2026-08-13",
+                max_posts=20,
+                max_pages=20,
+                delay=0,
+            )
+            job_id = service.create_job(request, start=False)
+
+            status = service.run_job(job_id)
+
+            self.assertEqual(status["state"], "completed")
+            self.assertEqual(status["counts"]["sources"], 1)
+            self.assertTrue(any("page=2" in url for url in calls))
+            self.assertFalse(any("page=3" in url for url in calls))
+            repo.close()
+
     def test_job_collects_rows_and_calculates_buy_price_without_mutating_user_price(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "kaitori.sqlite3")

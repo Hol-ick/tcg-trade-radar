@@ -39,7 +39,7 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(request.review_unmatched)
 
         with self.assertRaises(ValueError):
-            JobRequest.from_dict({"gallery_id": "tcggame", "max_posts": 201})
+            JobRequest.from_dict({"gallery_id": "tcggame", "max_posts": 20001})
 
         with self.assertRaises(ValueError):
             JobRequest.from_dict({"gallery_id": "tcggame", "buy_rate": 101})

@@ -65,6 +65,8 @@ class JobService:
         posts_seen = 0
         try:
             for page in range(1, request.max_pages + 1):
+                page_has_in_range_post = False
+                page_has_older_post = False
                 list_url = build_list_url(request.gallery_id, page, request.gallery_url)
                 self._log(job_id, step="list", message=f"목록 요청 시작 · {page}페이지", details={"url": list_url})
                 parser = DCInsideHTMLParser()
@@ -111,6 +113,11 @@ class JobService:
                     self._log(job_id, step="post", message=f"게시글 응답 수신 · {len(post_html):,}자", details={"url": post_url, "characters": len(post_html)})
                     document, _ = parse_html(post_html, post_url)
                     extracted_rows = extract_post(post_html, post_url, request.gallery_id, normalize_space(request.subject))
+                    posted_at = document.get("posted_at", "")
+                    if request.since and _is_before_date(posted_at, request.since):
+                        page_has_older_post = True
+                    if _date_in_range(posted_at, request.since, request.until):
+                        page_has_in_range_post = True
                     post_quality = classify_post(
                         document.get("title", ""),
                         document.get("body", ""),
@@ -164,6 +171,14 @@ class JobService:
                                 self.repository.apply_match(row["id"], match_card(row["card_name_raw"], row["rarity"], self.catalog))
                     if request.delay > 0:
                         self.sleep(request.delay)
+                if request.since and page_has_older_post and not page_has_in_range_post:
+                    self._log(
+                        job_id,
+                        step="list",
+                        message="백필 시작일 이전 페이지에 도달하여 수집을 종료합니다",
+                        details={"page": page, "since": request.since},
+                    )
+                    break
                 if posts_seen >= request.max_posts:
                     break
                 if request.delay > 0:
@@ -432,3 +447,12 @@ def _date_in_range(value: str, since: str | None, until: str | None) -> bool:
     if until and current > date.fromisoformat(until[:10]):
         return False
     return True
+
+
+def _is_before_date(value: str, boundary: str) -> bool:
+    if not value or not boundary:
+        return False
+    try:
+        return date.fromisoformat(value[:10]) < date.fromisoformat(boundary[:10])
+    except ValueError:
+        return False

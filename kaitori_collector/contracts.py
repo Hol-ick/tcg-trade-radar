@@ -110,10 +110,10 @@ class JobRequest:
             raise ValueError("gallery_id is required")
         if any(not subject.strip() for subject in self.subjects):
             raise ValueError("subjects must contain non-empty strings")
-        if not 1 <= self.max_posts <= 200:
-            raise ValueError("max_posts must be between 1 and 200")
-        if not 1 <= self.max_pages <= 20:
-            raise ValueError("max_pages must be between 1 and 20")
+        if not 1 <= self.max_posts <= 20_000:
+            raise ValueError("max_posts must be between 1 and 20000")
+        if not 1 <= self.max_pages <= 5_000:
+            raise ValueError("max_pages must be between 1 and 5000")
         if self.delay < 0:
             raise ValueError("delay must be zero or greater")
         if not 0 <= self.max_retries <= 3:
