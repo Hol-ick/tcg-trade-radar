@@ -256,7 +256,22 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(row["shipping_price_krw"], 1800)
 
     def test_decimal_attached_to_card_name_is_not_truncated_to_integer_price(self):
-        self.assertIsNone(parse_sale_line("택포 1.4야노망 Z로 추정되는 2중프텍", None, None))
+        row = parse_sale_line("택포 1.4야노망 Z로 추정되는 2중프텍", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["card_name"], "야노망 Z로 추정되는 2중프텍")
+        self.assertEqual(row["price_krw"], 14000)
+        self.assertEqual(row["price_unit"], "만원 단위 추정")
+        self.assertTrue(row["shipping_included"])
+        self.assertEqual(row["shipping_price_krw"], 2000)
+
+    def test_unitless_decimal_is_ten_thousand_won_when_card_name_precedes_price(self):
+        row = parse_sale_line("야노망 1.4 택포", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["price_krw"], 14000)
 
     def test_bundle_and_multiple_cards_are_never_auto_approved(self):
         bundle = parse_sale_line("블루아이즈 일괄 10만원 택포", True, None)

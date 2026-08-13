@@ -72,6 +72,11 @@ PRICE_RE = re.compile(
     r"(?:\s*[\(\[]?\s*(?:택포|택배비\s*(?:포함|별도)?|배송비\s*(?:포함|별도)?|포함|별도)\s*[\)\]]?)?"
     r"(?=\s*(?:$|(?:\.(?!\d)|,(?!\d)|[!?)]|에|으로|부터|쯤|정도|판매|팝니다|구매|구합니다|구해|찾|양도|거래|입니다|이에요|예요)))"
 )
+LEADING_PRICE_RE = re.compile(
+    r"^(?:반택포|편택포|택포)\s*(?P<value>\d+(?:[.,]\d+)?)\s*"
+    r"(?P<unit>만원|만|원)?(?P<label>.*)$"
+)
+LEADING_PRICE_SUFFIX_RE = re.compile(r"^(?:에|으로|부터|쯤|정도|판매|팝니다|구매|구합니다|구해|찾|양도|거래|입니다|이에요|예요)")
 RARITY_RE = re.compile(
     r"(?P<rarity>(?:\d+\s*)?(?:프싴|영싴|쿼싴|퍼홀|홀로|시크페레|시크|얼티|울레|레어|슈레|울|슈|컬|싴|얼|구일))$"
 )
@@ -376,12 +381,23 @@ def parse_sale_line(
     parse_line = re.sub(r"\s*(?:거래완료|판매완료|구매완료|거래\s*완료|판매\s*완료|구매\s*완료|예약중|예약\s*중)\s*$", "", line).strip()
     if not parse_line or parse_line.lower().startswith(("http", "- dc", "sadao")):
         return None
-    match = PRICE_RE.search(parse_line)
-    if not match:
+    leading_match = LEADING_PRICE_RE.match(parse_line)
+    if leading_match and LEADING_PRICE_SUFFIX_RE.match(leading_match.group("label").lstrip()):
+        leading_match = None
+    match = None if leading_match else PRICE_RE.search(parse_line)
+    if not leading_match and not match:
         return None
 
-    label = normalize_space(parse_line[: match.start()].strip("-·:"))
-    if not label or re.search(r"^(?:배송|택배|반택|편택|가격|합계|총액)\b", label):
+    if leading_match:
+        label = normalize_space(leading_match.group("label").strip("-·:"))
+        raw_value_text = leading_match.group("value")
+        unit = leading_match.group("unit") or ""
+    else:
+        assert match is not None
+        label = normalize_space(parse_line[: match.start()].strip("-·:"))
+        raw_value_text = match.group("value")
+        unit = match.group("unit") or ""
+    if not label or re.search(r"^(?:택포|반택포|편택포|배송|택배|반택|편택|가격|합계|총액)\b", label):
         return None
     quantity_match = QUANTITY_RE.search(label)
     quantity = int(quantity_match.group("quantity")) if quantity_match else 1
@@ -395,10 +411,9 @@ def parse_sale_line(
     card_name = item_label[: rarity_match.start()].strip(" -·") if rarity_match else item_label
     card_name = card_name or item_label
 
-    raw_price = match.group("value").replace(",", ".")
-    unit = match.group("unit") or ""
+    raw_price = raw_value_text.replace(",", ".")
     if unit == "원":
-        price_krw = round(float(match.group("value").replace(",", "")))
+        price_krw = round(float(raw_value_text.replace(",", "")))
         price_unit = "원 명시"
     else:
         price_krw = round(float(raw_price) * 10_000)
