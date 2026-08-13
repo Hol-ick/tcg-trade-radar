@@ -103,6 +103,7 @@ class DCInsideHTMLParser(HTMLParser):
         self._mobile_post_author_active = False
         self._mobile_post_author_parts: list[str] = []
         self._mobile_post_author_marker = ""
+        self.image_urls: list[str] = []
         self._mobile_list_parser = MobileListParser()
 
     def _has_class(self, name: str) -> bool:
@@ -121,6 +122,11 @@ class DCInsideHTMLParser(HTMLParser):
         if tag == "script" and (attributes.get("type") or "").lower() == "application/ld+json":
             self.json_ld_active = True
             self.json_ld_parts = []
+
+        if tag == "img":
+            image_url = attributes.get("src") or attributes.get("data-src") or attributes.get("data-original") or ""
+            if image_url and image_url not in self.image_urls:
+                self.image_urls.append(image_url)
 
         if tag == "tr":
             self.current_row = {"subject": "", "href": ""}
@@ -276,6 +282,9 @@ def parse_html(html: str, url: str) -> tuple[dict[str, Any], DCInsideHTMLParser]
         "posted_at": str(metadata.get("datePublished") or ""),
         "author_name": author_name,
         "author_type": parser.author_type if parser.author_name else infer_author_type(author_name),
+        "image_count": len(parser.image_urls),
+        "image_urls": list(parser.image_urls),
+        "body_characters": len(body.strip()),
     }, parser
 
 

@@ -152,3 +152,7 @@
 ## `POST /jobs/:id/retry`
 
 `failed` 또는 `completed` 작업을 `queued`로 되돌려 재실행합니다. source·row·review 유일성 제약으로 기존 결과와 이력을 보존합니다.
+
+## 전처리 필드
+
+결과 행에는 `post_status`, `price_status`, `price_scope`, `price_origin`, `analysis_status`, `card_match_status`가 추가됩니다. 가격이 없거나 삭제된 행의 `price_krw`와 `buy_price_krw`는 `null`입니다.

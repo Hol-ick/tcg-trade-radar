@@ -297,6 +297,26 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(rows[0].listing_type, "buy")
         self.assertEqual(rows[0].price_krw, 0)
         self.assertEqual(rows[0].review_reason, "희망가 미기재")
+        self.assertEqual(rows[0].price_status, "missing")
+        self.assertEqual(rows[0].analysis_status, "needs_review")
+
+    def test_completed_post_is_context_only_and_bundle_is_not_a_card_price(self):
+        completed = """
+        <html><body><span class="title_subject">블루아이즈 거래완료</span><div class="write_div">블루아이즈 울레 35,000원 거래완료</div></body></html>
+        """
+        bundle = """
+        <html><body><span class="title_subject">카드 일괄 판매</span><div class="write_div">블루아이즈, 레드아이즈 일괄 10만원</div></body></html>
+        """
+        completed_row = extract_post(completed, "https://example.test/post/completed", "tcggame", "판매")[0]
+        bundle_row = extract_post(bundle, "https://example.test/post/bundle", "tcggame", "판매")[0]
+        self.assertEqual(completed_row.post_status, "completed")
+        self.assertEqual(completed_row.analysis_status, "context_only")
+        self.assertEqual(bundle_row.price_scope, "bundle")
+        self.assertEqual(bundle_row.analysis_status, "needs_review")
+
+    def test_image_only_post_has_no_fake_price_row(self):
+        html = '<html><body><span class="title_subject">카드 사진 판매</span><div class="write_div"><img src="https://example.test/card.jpg" /></div></body></html>'
+        self.assertEqual(extract_post(html, "https://example.test/post/image", "tcggame", "판매"), [])
 
 
 if __name__ == "__main__":

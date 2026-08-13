@@ -118,6 +118,27 @@ class MarketTests(unittest.TestCase):
             self.assertEqual(summary["demand_status"], "stale_demand")
             repo.close()
 
+    def test_completed_and_bundle_rows_do_not_enter_current_price_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "market.sqlite3")
+            job_id = repo.create_job(JobRequest(gallery_id="tcggame"))
+            for index, (name, post_status, scope, price) in enumerate((
+                ("블루아이즈", "completed", "per_card", 30000),
+                ("블루아이즈", "active", "bundle", 100000),
+                ("블루아이즈", "active", "per_card", 35000),
+            )):
+                source_id, _ = repo.upsert_source({"gallery_id": "tcggame", "post_url": f"https://example.test/post/quality-{index}", "title": name, "posted_at": "2026-08-12", "raw_html": "", "post_status": post_status})
+                repo.attach_source_to_job(job_id, source_id)
+                current = row(f"https://example.test/post/quality-{index}", name, "sell", price, "2026-08-12")
+                current = current.__class__(**{**current.__dict__, "post_status": post_status, "price_scope": scope, "analysis_status": "context_only" if post_status != "active" else "needs_review" if scope != "per_card" else "usable"})
+                repo.insert_rows(job_id, source_id, [current])
+            summary = repo.summarize_cards()[0]
+            self.assertEqual(summary["sell_count"], 1)
+            self.assertEqual(summary["sell_price_median"], 35000)
+            self.assertEqual(summary["context_only_count"], 1)
+            self.assertEqual(summary["review_count"], 1)
+            repo.close()
+
     def test_demand_snapshot_keeps_new_market_metrics(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "market.sqlite3")

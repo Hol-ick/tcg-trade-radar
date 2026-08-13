@@ -9,7 +9,7 @@ import re
 import sys
 import time
 import zlib
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, quote, urlencode, urljoin, urlparse, urlunparse
@@ -20,6 +20,7 @@ from .browser_transport import BrowserTransportError, get_default_transport
 from .contracts import ExtractedRow, to_public_row
 from .html import DCInsideHTMLParser, normalize_space, parse_html
 from .intent import classify_listing
+from .preprocessing import analysis_status, append_quality_reason, classify_post, classify_price, fallback_card_match
 
 
 DEFAULT_USER_AGENT = (
@@ -76,7 +77,8 @@ AMBIGUOUS_QUANTITY_RE = re.compile(r"여러\s*장|다수|수량\s*(?:불명|미�
 CSV_FIELDS = [
     "gallery_id", "post_title", "post_url", "posted_at", "card_name", "rarity",
     "raw_price", "price_krw", "price_unit", "quantity", "shipping_included", "author_name", "author_type",
-    "shipping_price_krw", "review_status", "review_reason", "raw_line",
+    "shipping_price_krw", "review_status", "review_reason", "raw_line", "post_status",
+    "price_status", "price_scope", "price_origin", "analysis_status", "card_match_status",
 ]
 
 
@@ -358,13 +360,15 @@ def parse_sale_line(
     shipping_price: int | None,
 ) -> dict[str, Any] | None:
     line = normalize_space(line).strip("-·:")
-    if not line or line.lower().startswith(("http", "- dc", "sadao")):
+    raw_line = line
+    parse_line = re.sub(r"\s*(?:거래완료|판매완료|구매완료|거래\s*완료|판매\s*완료|구매\s*완료|예약중|예약\s*중)\s*$", "", line).strip()
+    if not parse_line or parse_line.lower().startswith(("http", "- dc", "sadao")):
         return None
-    match = PRICE_RE.search(line)
+    match = PRICE_RE.search(parse_line)
     if not match:
         return None
 
-    label = normalize_space(line[: match.start()].strip("-·:"))
+    label = normalize_space(parse_line[: match.start()].strip("-·:"))
     if not label or re.search(r"^(?:배송|택배|반택|편택|가격|합계|총액)\b", label):
         return None
     quantity_match = QUANTITY_RE.search(label)
@@ -399,11 +403,13 @@ def parse_sale_line(
         reasons.append("수량 확인 필요")
     if "이미지" in item_label and not card_name:
         reasons.append("이미지 전용 카드명")
-    included = parse_shipping(line, default_shipping)
+    included = parse_shipping(parse_line, default_shipping)
     if included is None:
         reasons.append("배송비 포함 여부 미확정")
     if not card_name or len(card_name) < 2:
         reasons.append("카드명 확인 필요")
+    price_status = "exact" if unit == "원" else "estimated"
+    price_scope = "bundle" if is_bundle or MULTI_CARD_RE.search(item_label) else "per_quantity" if quantity > 1 and "장당" not in line else "per_card"
     return {
         "card_name": card_name,
         "rarity": rarity,
@@ -415,7 +421,10 @@ def parse_sale_line(
         "shipping_price_krw": shipping_price if included is False else None,
         "review_status": "needs_review" if reasons else "parsed",
         "review_reason": ", ".join(dict.fromkeys(reasons)),
-        "raw_line": line,
+        "raw_line": raw_line,
+        "price_status": price_status,
+        "price_scope": price_scope,
+        "price_origin": "text",
     }
 
 
@@ -466,9 +475,52 @@ def extract_post(html: str, url: str, gallery_id: str, subject: str = "") -> lis
                 price_type="wanted",
                 author_name=document.get("author_name", ""),
                 author_type=document.get("author_type", "unknown"),
+                price_status="missing",
+                price_scope="unknown",
+                price_origin="unknown",
+                analysis_status="needs_review",
+                card_match_status=fallback_card_match(card_name),
             ))
-    if not rows and body:
-        print(f"warning: no price line parsed from {document['url']}; review image-only post", file=sys.stderr)
+    post_quality = classify_post(
+        document.get("title", ""),
+        body,
+        image_count=int(document.get("image_count") or 0),
+        row_count=len(rows),
+    )
+    normalized_rows: list[ExtractedRow] = []
+    for row in rows:
+        price_status, price_scope, price_origin = classify_price(
+            raw_price=row.raw_price,
+            price_unit=row.price_unit,
+            quantity=row.quantity,
+            raw_line=row.raw_line,
+            post_status=post_quality.status,
+        )
+        quality = analysis_status(
+            post_status=post_quality.status,
+            listing_type=row.listing_type,
+            card_name=row.card_name,
+            price_status=price_status,
+            price_scope=price_scope,
+        )
+        normalized_rows.append(replace(
+            row,
+            post_status=post_quality.status,
+            price_status=price_status,
+            price_scope=price_scope,
+            price_origin=price_origin,
+            analysis_status=quality,
+            card_match_status=fallback_card_match(row.card_name),
+            review_status="needs_review" if quality != "usable" or row.review_status == "needs_review" else row.review_status,
+            review_reason=append_quality_reason(
+                row.review_reason,
+                post_status=post_quality.status,
+                price_status=price_status,
+                price_scope=price_scope,
+                analysis=quality,
+            ),
+        ))
+    rows = normalized_rows
     return rows
 
 

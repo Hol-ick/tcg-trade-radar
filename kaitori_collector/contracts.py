@@ -12,6 +12,12 @@ JobState = Literal["queued", "running", "completed", "failed"]
 ListingType = Literal["sell", "buy", "trade", "unknown"]
 PriceType = Literal["asking", "wanted", "unknown"]
 AuthorType = Literal["guest", "registered", "unknown"]
+PostStatus = Literal["active", "completed", "reserved", "price_removed", "image_only", "unknown"]
+PriceStatus = Literal["exact", "estimated", "missing", "removed", "unknown"]
+PriceScope = Literal["per_card", "per_quantity", "bundle", "unknown"]
+PriceOrigin = Literal["text", "ocr", "comment", "inferred", "unknown"]
+AnalysisStatus = Literal["usable", "needs_review", "context_only", "excluded"]
+CardMatchStatus = Literal["matched", "candidate", "unmatched", "image_review"]
 
 
 @dataclass(frozen=True)
@@ -38,6 +44,12 @@ class ExtractedRow:
     price_type: PriceType = "unknown"
     author_name: str = ""
     author_type: AuthorType = "unknown"
+    post_status: PostStatus = "active"
+    price_status: PriceStatus = "exact"
+    price_scope: PriceScope = "per_card"
+    price_origin: PriceOrigin = "text"
+    analysis_status: AnalysisStatus = "usable"
+    card_match_status: CardMatchStatus = "unmatched"
 
 
 @dataclass(frozen=True)

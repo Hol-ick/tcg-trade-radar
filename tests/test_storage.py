@@ -64,6 +64,32 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(repo.list_rows(job_id=job_id)[0]["status"], "exported")
             repo.close()
 
+    def test_reprocess_quality_backfills_completed_and_price_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            job_id = repo.create_job(JobRequest(gallery_id="tcggame"))
+            source_id, _ = repo.upsert_source({
+                "gallery_id": "tcggame",
+                "post_url": "https://example.test/post/quality",
+                "title": "판매 카드 거래완료",
+                "raw_html": '<span class="title_subject">판매 카드 거래완료</span><div class="write_div">블루아이즈 35,000원 거래완료</div>',
+            })
+            repo.attach_source_to_job(job_id, source_id)
+            repo.insert_rows(job_id, source_id, [sample_row()])
+            repo.connection.execute("UPDATE kaitori_rows SET price_status = 'unknown', price_scope = 'unknown', analysis_status = 'needs_review'")
+            repo.connection.commit()
+
+            counts = repo.reprocess_quality()
+            processed = repo.list_rows(job_id=job_id)[0]
+
+            self.assertEqual(counts["sources"], 1)
+            self.assertEqual(counts["rows"], 1)
+            self.assertEqual(processed["post_status"], "completed")
+            self.assertEqual(processed["price_status"], "exact")
+            self.assertEqual(processed["analysis_status"], "context_only")
+            self.assertEqual(processed["price_krw_observed"], 35000)
+            repo.close()
+
 
 if __name__ == "__main__":
     unittest.main()

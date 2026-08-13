@@ -17,6 +17,7 @@ from .contracts import JobRequest, ReviewAction, utc_now
 from .html import DCInsideHTMLParser, parse_html, normalize_space
 from .observability import inspect_source_response, is_retryable_error, retry_delay
 from .parser import CSV_FIELDS, SourceResponseError, build_list_url, extract_comment_token, extract_post, fetch_comment_text_auto, fetch_text_auto
+from .preprocessing import classify_post
 from .storage import Repository
 
 
@@ -110,6 +111,12 @@ class JobService:
                     self._log(job_id, step="post", message=f"게시글 응답 수신 · {len(post_html):,}자", details={"url": post_url, "characters": len(post_html)})
                     document, _ = parse_html(post_html, post_url)
                     extracted_rows = extract_post(post_html, post_url, request.gallery_id, normalize_space(request.subject))
+                    post_quality = classify_post(
+                        document.get("title", ""),
+                        document.get("body", ""),
+                        image_count=int(document.get("image_count") or 0),
+                        row_count=len(extracted_rows),
+                    )
                     self._log(
                         job_id,
                         step="parse",
@@ -137,6 +144,9 @@ class JobService:
                         "posted_at": document["posted_at"],
                         "author_name": document.get("author_name", ""),
                         "author_type": document.get("author_type", "unknown"),
+                        "post_status": post_quality.status,
+                        "image_count": document.get("image_count", 0),
+                        "body_characters": document.get("body_characters", len(document.get("body", ""))),
                         "raw_html": post_html,
                         "keep_raw": request.keep_raw,
                     })
@@ -205,7 +215,8 @@ class JobService:
             item["card_name"] = item["card_name_raw"]
             item["review_status"] = item["status"]
             item["source_url"] = item["post_url"]
-            item["buy_price_krw"] = round(item["price_krw"] * job["buy_rate"] / 100)
+            item["price_krw"] = item.get("price_krw_observed")
+            item["buy_price_krw"] = round(item["price_krw"] * job["buy_rate"] / 100) if item["price_krw"] is not None else None
             item["listing_type"] = item.get("listing_type") or "unknown"
             item["price_type"] = item.get("price_type") or "unknown"
             item["exportable"] = item["status"] in {"approved", "exported"}
@@ -243,7 +254,8 @@ class JobService:
         for row in rows:
             item = dict(row)
             item.pop("raw_html", None)
-            item["buy_price_krw"] = round(item["price_krw"] * job["buy_rate"] / 100)
+            item["price_krw"] = item.get("price_krw_observed")
+            item["buy_price_krw"] = round(item["price_krw"] * job["buy_rate"] / 100) if item["price_krw"] is not None else None
             result.append(item)
         return result
 

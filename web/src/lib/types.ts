@@ -55,6 +55,12 @@ export type ResultRow = {
   author_name?: string
   posted_at?: string
   raw_line?: string
+  post_status?: "active" | "completed" | "reserved" | "price_removed" | "image_only" | "unknown"
+  price_status?: "exact" | "estimated" | "missing" | "removed" | "unknown"
+  price_scope?: "per_card" | "per_quantity" | "bundle" | "unknown"
+  price_origin?: "text" | "ocr" | "comment" | "inferred" | "unknown"
+  analysis_status?: "usable" | "needs_review" | "context_only" | "excluded"
+  card_match_status?: "matched" | "candidate" | "unmatched" | "image_review"
 }
 
 export type WeekSnapshot = {

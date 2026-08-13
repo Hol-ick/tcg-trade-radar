@@ -26,6 +26,9 @@ CREATE TABLE IF NOT EXISTS kaitori_sources (
   posted_at TEXT NOT NULL DEFAULT '',
   author_name TEXT NOT NULL DEFAULT '',
   author_type TEXT NOT NULL DEFAULT 'unknown',
+  post_status TEXT NOT NULL DEFAULT 'active',
+  image_count INTEGER NOT NULL DEFAULT 0,
+  body_characters INTEGER NOT NULL DEFAULT 0,
   raw_html TEXT,
   fetched_at TEXT NOT NULL,
   content_hash TEXT NOT NULL,
@@ -72,6 +75,13 @@ CREATE TABLE IF NOT EXISTS kaitori_rows (
   price_type TEXT NOT NULL DEFAULT 'unknown',
   set_name TEXT NOT NULL DEFAULT '',
   condition_raw TEXT NOT NULL DEFAULT '',
+  price_krw_observed INTEGER,
+  post_status TEXT NOT NULL DEFAULT 'active',
+  price_status TEXT NOT NULL DEFAULT 'unknown',
+  price_scope TEXT NOT NULL DEFAULT 'unknown',
+  price_origin TEXT NOT NULL DEFAULT 'unknown',
+  analysis_status TEXT NOT NULL DEFAULT 'needs_review',
+  card_match_status TEXT NOT NULL DEFAULT 'unmatched',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (source_id, row_fingerprint)
@@ -207,6 +217,13 @@ class Repository:
             "price_type": "TEXT NOT NULL DEFAULT 'unknown'",
             "set_name": "TEXT NOT NULL DEFAULT ''",
             "condition_raw": "TEXT NOT NULL DEFAULT ''",
+            "price_krw_observed": "INTEGER",
+            "post_status": "TEXT NOT NULL DEFAULT 'active'",
+            "price_status": "TEXT NOT NULL DEFAULT 'unknown'",
+            "price_scope": "TEXT NOT NULL DEFAULT 'unknown'",
+            "price_origin": "TEXT NOT NULL DEFAULT 'unknown'",
+            "analysis_status": "TEXT NOT NULL DEFAULT 'needs_review'",
+            "card_match_status": "TEXT NOT NULL DEFAULT 'unmatched'",
         }
         for column, definition in additions.items():
             if column not in existing:
@@ -232,6 +249,14 @@ class Repository:
             self.connection.execute("ALTER TABLE kaitori_sources ADD COLUMN author_name TEXT NOT NULL DEFAULT ''")
         if "author_type" not in source_columns:
             self.connection.execute("ALTER TABLE kaitori_sources ADD COLUMN author_type TEXT NOT NULL DEFAULT 'unknown'")
+        source_additions = {
+            "post_status": "TEXT NOT NULL DEFAULT 'active'",
+            "image_count": "INTEGER NOT NULL DEFAULT 0",
+            "body_characters": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for column, definition in source_additions.items():
+            if column not in source_columns:
+                self.connection.execute(f"ALTER TABLE kaitori_sources ADD COLUMN {column} {definition}")
 
     def close(self) -> None:
         self.connection.close()
@@ -350,6 +375,9 @@ class Repository:
             str(source.get("posted_at") or ""),
             str(source.get("author_name") or ""),
             str(source.get("author_type") or "unknown"),
+            str(source.get("post_status") or "active"),
+            max(0, int(source.get("image_count") or 0)),
+            max(0, int(source.get("body_characters") or 0)),
             raw_html if source.get("keep_raw", True) else None,
             str(source.get("fetched_at") or utc_now()),
             content_hash,
@@ -357,16 +385,17 @@ class Repository:
         )
         cursor = self.connection.execute(
             """INSERT OR IGNORE INTO kaitori_sources
-            (id, gallery_id, post_id, post_url, title, posted_at, author_name, author_type, raw_html, fetched_at, content_hash, source_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, gallery_id, post_id, post_url, title, posted_at, author_name, author_type, post_status, image_count, body_characters, raw_html, fetched_at, content_hash, source_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             values,
         )
         self.connection.execute(
             """UPDATE kaitori_sources
                SET author_name = CASE WHEN ? <> '' THEN ? ELSE author_name END,
-                   author_type = CASE WHEN ? <> 'unknown' THEN ? ELSE author_type END
+                   author_type = CASE WHEN ? <> 'unknown' THEN ? ELSE author_type END,
+                   post_status = ?, image_count = ?, body_characters = ?
                WHERE id = ?""",
-            (values[6], values[6], values[7], values[7], source_id),
+            (values[6], values[6], values[7], values[7], values[8], values[9], values[10], source_id),
         )
         self.connection.commit()
         return source_id, cursor.rowcount == 1
@@ -440,8 +469,9 @@ class Repository:
                 (id, job_id, source_id, row_fingerprint, card_name_raw, rarity, raw_price,
                  price_krw, price_unit, quantity, shipping_included, shipping_price_krw,
                  status, review_reason, raw_line, listing_type, intent_confidence, price_type,
+                 price_krw_observed, post_status, price_status, price_scope, price_origin, analysis_status, card_match_status,
                  created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     row_id,
                     job_id,
@@ -461,6 +491,13 @@ class Repository:
                     public["listing_type"],
                     float(public["intent_confidence"] or 0),
                     public["price_type"],
+                    public["price_krw"] if public.get("price_status") in {"exact", "estimated"} and public.get("price_krw") not in (None, "", 0) else None,
+                    public.get("post_status") or "active",
+                    public.get("price_status") or "unknown",
+                    public.get("price_scope") or "unknown",
+                    public.get("price_origin") or "unknown",
+                    public.get("analysis_status") or "needs_review",
+                    public.get("card_match_status") or "unmatched",
                     now,
                     now,
                 ),
@@ -476,6 +513,75 @@ class Repository:
                 inserted += int(association.rowcount == 1)
         self.connection.commit()
         return inserted
+
+    def reprocess_quality(self) -> dict[str, int]:
+        """Backfill quality metadata for rows collected before the quality layer existed."""
+        from .html import parse_html
+        from .preprocessing import analysis_status, append_quality_reason, classify_post, classify_price, fallback_card_match
+
+        sources = self.connection.execute("SELECT * FROM kaitori_sources ORDER BY id").fetchall()
+        source_count = 0
+        row_count = 0
+        for source in sources:
+            source_data = dict(source)
+            raw_html = source_data.get("raw_html") or ""
+            rows = self.connection.execute("SELECT * FROM kaitori_rows WHERE source_id = ?", (source_data["id"],)).fetchall()
+            if raw_html:
+                document, _ = parse_html(raw_html, source_data["post_url"])
+                post_quality = classify_post(
+                    document.get("title", source_data.get("title", "")),
+                    document.get("body", ""),
+                    image_count=int(document.get("image_count") or 0),
+                    row_count=len(rows),
+                )
+                self.connection.execute(
+                    """UPDATE kaitori_sources SET post_status = ?, image_count = ?, body_characters = ?,
+                       title = CASE WHEN ? <> '' THEN ? ELSE title END,
+                       posted_at = CASE WHEN ? <> '' THEN ? ELSE posted_at END
+                       WHERE id = ?""",
+                    (post_quality.status, post_quality.image_count, post_quality.body_characters,
+                     document.get("title", ""), document.get("title", ""), document.get("posted_at", ""), document.get("posted_at", ""), source_data["id"]),
+                )
+            else:
+                post_quality = classify_post(source_data.get("title", ""), "", image_count=int(source_data.get("image_count") or 0), row_count=len(rows))
+            for row in rows:
+                row_data = dict(row)
+                price_status, price_scope, price_origin = classify_price(
+                    raw_price=str(row_data.get("raw_price") or ""),
+                    price_unit=str(row_data.get("price_unit") or ""),
+                    quantity=int(row_data.get("quantity") or 1),
+                    raw_line=str(row_data.get("raw_line") or ""),
+                    post_status=post_quality.status,
+                )
+                quality = analysis_status(
+                    post_status=post_quality.status,
+                    listing_type=str(row_data.get("listing_type") or "unknown"),
+                    card_name=str(row_data.get("card_name_raw") or ""),
+                    price_status=price_status,
+                    price_scope=price_scope,
+                )
+                observed_price = int(row_data["price_krw"]) if row_data.get("price_krw") not in (None, 0) and price_status in {"exact", "estimated"} else None
+                next_status = row_data.get("status") or "needs_review"
+                if next_status not in {"approved", "exported"}:
+                    next_status = "parsed" if quality == "usable" and not row_data.get("review_reason") else "needs_review"
+                reason = append_quality_reason(
+                    str(row_data.get("review_reason") or ""),
+                    post_status=post_quality.status,
+                    price_status=price_status,
+                    price_scope=price_scope,
+                    analysis=quality,
+                )
+                self.connection.execute(
+                    """UPDATE kaitori_rows SET price_krw_observed = ?, post_status = ?, price_status = ?,
+                       price_scope = ?, price_origin = ?, analysis_status = ?, card_match_status = ?,
+                       review_reason = ?, status = ?, updated_at = ? WHERE id = ?""",
+                    (observed_price, post_quality.status, price_status, price_scope, price_origin, quality,
+                     fallback_card_match(str(row_data.get("card_name_raw") or "")), reason, next_status, utc_now(), row_data["id"]),
+                )
+                row_count += 1
+            source_count += 1
+        self.connection.commit()
+        return {"sources": source_count, "rows": row_count}
 
     def list_rows(self, *, job_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
         query = """SELECT r.*, s.gallery_id, s.post_url, s.title AS post_title, s.posted_at, s.raw_html, s.author_name, s.author_type
@@ -707,9 +813,14 @@ class Repository:
         next_status = current["status"]
         if result.status == "needs_review" and next_status not in {"approved", "exported"}:
             next_status = "needs_review"
+        next_match_status = "matched" if result.status == "matched" and result.card_code else "candidate" if result.candidates else "unmatched"
+        next_analysis_status = current.get("analysis_status", "needs_review")
+        if next_match_status == "matched" and next_analysis_status == "needs_review" and current.get("price_scope") == "per_card" and current.get("price_status") in {"exact", "estimated"}:
+            next_analysis_status = "usable" if current.get("post_status", "active") == "active" else "context_only"
         self.connection.execute(
-            "UPDATE kaitori_rows SET card_code = ?, status = ?, review_reason = CASE WHEN ? = 'needs_review' THEN ? ELSE review_reason END, updated_at = ? WHERE id = ?",
-            (result.card_code, next_status, result.status, result.reason, now, row_id),
+            """UPDATE kaitori_rows SET card_code = ?, status = ?, card_match_status = ?, analysis_status = ?,
+               review_reason = CASE WHEN ? = 'needs_review' THEN ? ELSE review_reason END, updated_at = ? WHERE id = ?""",
+            (result.card_code, next_status, next_match_status, next_analysis_status, result.status, result.reason, now, row_id),
         )
         self.connection.commit()
         updated = self.get_row(row_id)
@@ -749,12 +860,12 @@ def _empty_counts() -> dict[str, int]:
 
 
 def _card_summary(card_key: str, rows: list[dict[str, Any]], *, reference_date: str | None = None) -> dict[str, Any]:
-    sells = [row for row in rows if row.get("listing_type") == "sell"]
-    buys = [row for row in rows if row.get("listing_type") == "buy"]
-    trades = [row for row in rows if row.get("listing_type") == "trade"]
-    sell_prices = [int(row.get("price_krw") or 0) for row in sells if int(row.get("price_krw") or 0) > 0]
-    wanted_prices = [int(row.get("price_krw") or 0) for row in buys if int(row.get("price_krw") or 0) > 0]
-    active_sources = {row.get("source_id") for row in rows if row.get("source_id")}
+    sells = [row for row in rows if row.get("listing_type") == "sell" and _include_current_listing(row)]
+    buys = [row for row in rows if row.get("listing_type") == "buy" and _include_current_listing(row)]
+    trades = [row for row in rows if row.get("listing_type") == "trade" and _include_current_listing(row)]
+    sell_prices = [_observed_price(row) for row in sells if _usable_price(row)]
+    wanted_prices = [_observed_price(row) for row in buys if _usable_price(row)]
+    active_sources = {row.get("source_id") for row in [*sells, *buys, *trades] if row.get("source_id")}
     buy_count = len(buys)
     sell_count = len(sells)
     reference_day = _as_date(reference_date) or date.today()
@@ -778,7 +889,7 @@ def _card_summary(card_key: str, rows: list[dict[str, Any]], *, reference_date: 
     demand_ratio = round(buy_count / max(sell_count, 1), 2)
     sell_posts = {row.get("source_id") or row.get("post_url") for row in sells}
     buy_posts = {row.get("source_id") or row.get("post_url") for row in buys}
-    quality_status = "needs_review" if any(row.get("status") == "needs_review" or row.get("listing_type") == "unknown" for row in rows) else "observed"
+    quality_status = "needs_review" if any(row.get("analysis_status") in {"needs_review", "context_only"} or row.get("status") == "needs_review" or row.get("listing_type") == "unknown" for row in rows) else "observed"
     if len(active_sources) < 2 and quality_status == "observed":
         quality_status = "low_sample"
     latest = max((str(row.get("posted_at") or "") for row in rows), default="")
@@ -808,6 +919,9 @@ def _card_summary(card_key: str, rows: list[dict[str, Any]], *, reference_date: 
         "quality_status": quality_status,
         "latest_posted_at": latest,
         "evidence": f"최근 구매글 {buy_count}건(최근 {len(recent_buys)}건) / 판매 매물 {sell_count}건 / 게시글 {len(active_sources)}개",
+        "usable_price_count": len(sell_prices),
+        "context_only_count": sum(1 for row in rows if row.get("analysis_status") == "context_only"),
+        "review_count": sum(1 for row in rows if row.get("analysis_status") == "needs_review"),
     }
 
 
@@ -855,17 +969,23 @@ def _public_storage_row(row: dict[str, Any]) -> dict[str, Any]:
         "card_name_raw": row["card_name_raw"],
         "rarity": row["rarity"],
         "raw_price": row["raw_price"],
-        "price_krw": row["price_krw"],
+        "price_krw": _observed_price(row),
         "quantity": row["quantity"],
         "shipping_included": row["shipping_included"],
         "shipping_price_krw": row["shipping_price_krw"],
         "review_reason": row["review_reason"],
         "status": row["status"],
+        "post_status": row.get("post_status", "active"),
+        "price_status": row.get("price_status", "unknown"),
+        "price_scope": row.get("price_scope", "unknown"),
+        "price_origin": row.get("price_origin", "unknown"),
+        "analysis_status": row.get("analysis_status", "needs_review"),
+        "card_match_status": row.get("card_match_status", "unmatched"),
     }
 
 
 def _allowed_review_fields(data: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"card_name_raw", "card_name", "rarity", "raw_price", "price_krw", "quantity", "shipping_included", "shipping_price_krw", "review_reason"}
+    allowed = {"card_name_raw", "card_name", "rarity", "raw_price", "price_krw", "quantity", "shipping_included", "shipping_price_krw", "review_reason", "price_status", "price_scope", "analysis_status", "card_match_status"}
     result = {key: value for key, value in data.items() if key in allowed}
     if "card_name" in result and "card_name_raw" not in result:
         result["card_name_raw"] = result.pop("card_name")
@@ -874,3 +994,26 @@ def _allowed_review_fields(data: dict[str, Any]) -> dict[str, Any]:
         if value not in {"included", "separate", "unknown"}:
             raise ValueError("shipping_included must be included, separate, or unknown")
     return result
+
+
+def _observed_price(row: dict[str, Any]) -> int | None:
+    observed = row.get("price_krw_observed")
+    if observed not in (None, "", 0):
+        return int(observed)
+    status = row.get("price_status")
+    value = row.get("price_krw")
+    if status in {"missing", "removed"} or value in (None, "", 0):
+        return None
+    return int(value)
+
+
+def _usable_price(row: dict[str, Any]) -> bool:
+    return row.get("analysis_status") == "usable" and row.get("price_scope") == "per_card" and _observed_price(row) is not None
+
+
+def _include_current_listing(row: dict[str, Any]) -> bool:
+    if row.get("post_status", "active") != "active" or row.get("analysis_status", "usable") in {"context_only", "excluded"}:
+        return False
+    if row.get("listing_type") in {"sell", "trade"} and row.get("price_scope") != "per_card":
+        return False
+    return True
