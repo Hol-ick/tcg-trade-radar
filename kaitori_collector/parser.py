@@ -64,9 +64,13 @@ class SourceResponseError(RuntimeError):
             "fallback_error": self.fallback_error,
             "reason": "empty_response",
         }
+
+
+DEFAULT_SHIPPING_PRICE_KRW = 2_000
 PRICE_RE = re.compile(
     r"(?P<value>\d+(?:[.,]\d+)?)\s*(?P<unit>만원|만|원)?"
-    r"(?:\s*[\(\[]?\s*(?:택포|택배비\s*(?:포함|별도)?|배송비\s*(?:포함|별도)?|포함|별도)\s*[\)\]]?)?\s*$"
+    r"(?:\s*[\(\[]?\s*(?:택포|택배비\s*(?:포함|별도)?|배송비\s*(?:포함|별도)?|포함|별도)\s*[\)\]]?)?"
+    r"(?=\s*(?:$|(?:\.(?!\d)|,(?!\d)|[!?)]|에|으로|부터|쯤|정도|판매|팝니다|구매|구합니다|구해|찾|양도|거래|입니다|이에요|예요)))"
 )
 RARITY_RE = re.compile(
     r"(?P<rarity>(?:\d+\s*)?(?:프싴|영싴|쿼싴|퍼홀|홀로|시크페레|시크|얼티|울레|레어|슈레|울|슈|컬|싴|얼|구일))$"
@@ -355,6 +359,13 @@ def parse_shipping_price(body: str) -> int | None:
     return round(float(raw_value.replace(",", ".")) * (1_000 if unit == "천" else 1_000))
 
 
+def resolve_shipping_price(included: bool | None, shipping_price: int | None) -> int | None:
+    """Return an explicit fee or the normal 2,000 KRW parcel default."""
+    if included is None:
+        return shipping_price
+    return shipping_price if shipping_price is not None else DEFAULT_SHIPPING_PRICE_KRW
+
+
 def parse_sale_line(
     line: str,
     default_shipping: bool | None,
@@ -419,7 +430,7 @@ def parse_sale_line(
         "price_unit": price_unit,
         "quantity": quantity,
         "shipping_included": included,
-        "shipping_price_krw": shipping_price if included is False else None,
+        "shipping_price_krw": resolve_shipping_price(included, shipping_price),
         "review_status": "needs_review" if reasons else "parsed",
         "review_reason": ", ".join(dict.fromkeys(reasons)),
         "raw_line": raw_line,

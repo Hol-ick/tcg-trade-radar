@@ -234,7 +234,29 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(row["price_krw"], 35000)
         self.assertEqual(row["price_unit"], "원 명시")
         self.assertTrue(row["shipping_included"])
+        self.assertEqual(row["shipping_price_krw"], 2000)
         self.assertEqual(row["review_status"], "parsed")
+
+    def test_taekpo_before_price_and_trailing_request_are_parsed(self):
+        row = parse_sale_line("판스메르미아 4장 택포 7에 구해봅니다", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["card_name"], "판스메르미아")
+        self.assertEqual(row["quantity"], 4)
+        self.assertEqual(row["price_krw"], 70000)
+        self.assertTrue(row["shipping_included"])
+        self.assertEqual(row["shipping_price_krw"], 2000)
+
+    def test_explicit_shipping_fee_overrides_default(self):
+        row = parse_sale_line("블루아이즈 35,000원 택포", None, 1800)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["shipping_price_krw"], 1800)
+
+    def test_decimal_attached_to_card_name_is_not_truncated_to_integer_price(self):
+        self.assertIsNone(parse_sale_line("택포 1.4야노망 Z로 추정되는 2중프텍", None, None))
 
     def test_bundle_and_multiple_cards_are_never_auto_approved(self):
         bundle = parse_sale_line("블루아이즈 일괄 10만원 택포", True, None)
