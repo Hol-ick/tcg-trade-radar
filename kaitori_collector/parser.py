@@ -79,6 +79,7 @@ CSV_FIELDS = [
     "raw_price", "price_krw", "price_unit", "quantity", "shipping_included", "author_name", "author_type",
     "shipping_price_krw", "review_status", "review_reason", "raw_line", "post_status",
     "price_status", "price_scope", "price_origin", "analysis_status", "card_match_status",
+    "seller_id", "seller_name", "seller_risk_score", "seller_risk_level", "seller_review_status", "is_repost",
 ]
 
 

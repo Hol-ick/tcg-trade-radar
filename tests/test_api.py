@@ -64,6 +64,8 @@ class ApiTests(unittest.TestCase):
         self.assertIn("목록", " ".join(item["message"] for item in logs.body["logs"]))
         self.assertEqual(rows.status, 200)
         self.assertEqual(len(rows.body["rows"]), 1)
+        self.assertIn("seller_id", rows.body["rows"][0])
+        self.assertIn("seller_risk_level", rows.body["rows"][0])
         self.assertFalse(rows.body["rows"][0]["exportable"])
         self.assertEqual(cards.status, 200)
         self.assertEqual(cards.body["cards"][0]["sell_count"], 1)

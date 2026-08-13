@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
-from .contracts import JobRequest, ReviewAction
+from .contracts import JobRequest, ReviewAction, SellerReviewAction
 from .service import JobService
 
 
@@ -70,6 +70,20 @@ class WorkerApplication:
                 raise ValueError("game_id and snapshot_date are required")
             count = self.service.repository.refresh_demand_snapshot(snapshot_date, game_id, since=payload.get("since"), until=payload.get("until"))
             return ApiResponse(201, {"game_id": game_id, "snapshot_date": snapshot_date, "count": count})
+        if route == "/market/sellers" and method == "GET":
+            return ApiResponse(200, {"sellers": self.service.get_sellers(
+                game_id=_query_value(query, "game_id"),
+                query_text=_query_value(query, "q"),
+                risk_level_filter=_query_value(query, "risk_level"),
+                limit=int(_query_value(query, "limit") or 200),
+            )})
+        if route == "/market/risk-signals" and method == "GET":
+            return ApiResponse(200, {"signals": self.service.get_risk_signals(
+                seller_id=_query_value(query, "seller_id"),
+                severity=_query_value(query, "severity"),
+                status=_query_value(query, "status"),
+                limit=int(_query_value(query, "limit") or 200),
+            )})
 
         parts = [part for part in route.split("/") if part]
         if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "csv" and method == "GET":
@@ -93,6 +107,11 @@ class WorkerApplication:
         if len(parts) == 3 and parts[0] == "rows" and parts[2] == "review" and method == "POST":
             action = ReviewAction.from_dict(payload)
             return ApiResponse(200, self.service.review_row(parts[1], action))
+        if len(parts) == 3 and parts[0] == "sellers" and parts[2] == "review" and method == "POST":
+            action = SellerReviewAction.from_dict(payload)
+            return ApiResponse(200, self.service.review_seller(parts[1], action))
+        if len(parts) == 2 and parts[0] == "sellers" and method == "GET":
+            return ApiResponse(200, self.service.get_seller(parts[1]))
         return ApiResponse(404, {"error": "route not found"})
 
     def _authorized(self, headers: dict[str, str]) -> bool:

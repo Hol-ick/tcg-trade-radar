@@ -157,6 +157,26 @@ class ReviewAction:
         return cls(action=action, actor=actor, after_data=after_data)
 
 
+@dataclass(frozen=True)
+class SellerReviewAction:
+    action: Literal["watch", "clear", "mark_safe", "confirm_risk", "note"]
+    actor: str = "admin"
+    note: str = ""
+    evidence_url: str = ""
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "SellerReviewAction":
+        action = str(payload.get("action") or "").strip().lower()
+        if action not in {"watch", "clear", "mark_safe", "confirm_risk", "note"}:
+            raise ValueError("action must be watch, clear, mark_safe, confirm_risk, or note")
+        return cls(
+            action=action,
+            actor=str(payload.get("actor") or "admin").strip() or "admin",
+            note=str(payload.get("note") or "").strip(),
+            evidence_url=str(payload.get("evidence_url") or "").strip(),
+        )
+
+
 def to_public_row(row: ExtractedRow | dict[str, Any]) -> dict[str, Any]:
     """Return the stable API shape without leaking internal boolean values."""
     values = asdict(row) if isinstance(row, ExtractedRow) else dict(row)

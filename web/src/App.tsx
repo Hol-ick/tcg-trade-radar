@@ -3,7 +3,8 @@ import { ArrowLeft, ArrowRight, ExternalLink, Play } from "lucide-react"
 
 import { DevPage } from "@/dev-page"
 import { ResultTable } from "@/components/result-table"
-import { createJob, downloadJobCsv, getHealth } from "@/lib/api"
+import { SellerPanel } from "@/components/seller-panel"
+import { createJob, downloadJobCsv, getHealth, getSellers } from "@/lib/api"
 import { useJobPolling } from "@/hooks/use-job-polling"
 import { GALLERY_PRESETS } from "@/lib/types"
 import { getCurrentWeekRange, isCurrentOrFuture, shiftWeek, type WeekRange } from "@/lib/week-range"
@@ -26,6 +27,7 @@ export function LiveConsole({ dev = false }: { dev?: boolean }) {
   const [health, setHealth] = useState<"checking" | "online" | "offline">("checking")
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [sellers, setSellers] = useState<import("@/lib/types").SellerSummary[]>([])
   const { job, logs, rows, error, isPolling } = useJobPolling(jobId)
 
   const gallery = GALLERY_PRESETS.find((item) => item.id === galleryId) || GALLERY_PRESETS[0]
@@ -36,6 +38,10 @@ export function LiveConsole({ dev = false }: { dev?: boolean }) {
   const visibleError = submitError || error
 
   useEffect(() => { getHealth().then(() => setHealth("online")).catch(() => setHealth("offline")) }, [])
+  useEffect(() => {
+    if (activeJob?.state !== "completed") return
+    getSellers(gallery.id).then((payload) => setSellers(payload.sellers)).catch(() => setSellers([]))
+  }, [activeJob?.state, gallery.id])
 
   const moveRange = (direction: -1 | 1) => {
     if (direction === 1 && isNextDisabled) return
@@ -98,6 +104,7 @@ export function LiveConsole({ dev = false }: { dev?: boolean }) {
         {health === "offline" && !visibleError && <div className="notice" role="status">로컬 수집 워커를 먼저 실행하세요.</div>}
         <LiveStatus job={activeJob} logs={logs} />
         <ResultTable rows={visibleRows} isLoading={isPolling && visibleRows.length === 0} onDownloadCsv={activeJob?.state === "completed" ? exportCsv : undefined} />
+        {activeJob?.state === "completed" && <SellerPanel sellers={sellers} />}
       </div>
     </main>
   )

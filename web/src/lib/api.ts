@@ -1,4 +1,4 @@
-import type { HealthResponse, JobLog, JobRequest, JobStatus, ResultRow } from "./types"
+import type { HealthResponse, JobLog, JobRequest, JobStatus, ResultRow, SellerSummary } from "./types"
 
 const baseUrl = (import.meta.env.VITE_WORKER_URL || "/api").replace(/\/$/, "")
 
@@ -36,6 +36,7 @@ export function createJob(payload: JobRequest) { return request<{ job_id: string
 export function getJob(jobId: string) { return request<JobStatus>(`/jobs/${encodeURIComponent(jobId)}`) }
 export function getJobLogs(jobId: string) { return request<{ job_id: string; logs: JobLog[] }>(`/jobs/${encodeURIComponent(jobId)}/logs?limit=500`) }
 export function getJobResults(jobId: string) { return request<{ job_id: string; rows: ResultRow[] }>(`/jobs/${encodeURIComponent(jobId)}/results`) }
+export function getSellers(gameId: string) { return request<{ sellers: SellerSummary[] }>(`/market/sellers?game_id=${encodeURIComponent(gameId)}&limit=100`) }
 
 export async function downloadJobCsv(jobId: string) {
   const response = await fetch(`${baseUrl}/jobs/${encodeURIComponent(jobId)}/csv`, { headers: { Accept: "text/csv" } })

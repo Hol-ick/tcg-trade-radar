@@ -61,6 +61,12 @@ export type ResultRow = {
   price_origin?: "text" | "ocr" | "comment" | "inferred" | "unknown"
   analysis_status?: "usable" | "needs_review" | "context_only" | "excluded"
   card_match_status?: "matched" | "candidate" | "unmatched" | "image_review"
+  seller_id?: string
+  seller_name?: string
+  seller_risk_score?: number
+  seller_risk_level?: "low" | "medium" | "high"
+  seller_review_status?: "unreviewed" | "watching" | "safe" | "confirmed" | "noted"
+  is_repost?: number
 }
 
 export type WeekSnapshot = {
@@ -118,3 +124,18 @@ export type JobLog = {
   details?: Record<string, unknown>
 }
 export type HealthResponse = { version: string }
+export type SellerSummary = {
+  seller_id: string
+  display_name: string
+  author_type: string
+  identity_scope: string
+  observed_post_count: number
+  sell_post_count: number
+  buy_post_count: number
+  completed_post_count: number
+  repost_count: number
+  risk_score: number
+  risk_level: "low" | "medium" | "high"
+  review_status: string
+  open_signal_count: number
+}

@@ -12,8 +12,9 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
-from .contracts import CommentRecord, ExtractedRow, JobRequest, ReviewAction, to_public_row, utc_now
+from .contracts import CommentRecord, ExtractedRow, JobRequest, ReviewAction, SellerReviewAction, to_public_row, utc_now
 from .normalization import normalize_listing_card_label
+from .seller_risk import build_listing_fingerprint, build_post_family_id, build_seller_identity, detect_text_signals, risk_level
 
 
 SCHEMA_SQL = """
@@ -33,6 +34,12 @@ CREATE TABLE IF NOT EXISTS kaitori_sources (
   fetched_at TEXT NOT NULL,
   content_hash TEXT NOT NULL,
   source_status TEXT NOT NULL DEFAULT 'active',
+  seller_id TEXT,
+  identity_scope TEXT NOT NULL DEFAULT 'post',
+  post_family_id TEXT,
+  listing_fingerprint TEXT,
+  repost_of_source_id TEXT,
+  is_repost INTEGER NOT NULL DEFAULT 0,
   UNIQUE (post_url, content_hash)
 );
 
@@ -151,6 +158,51 @@ CREATE INDEX IF NOT EXISTS kaitori_job_rows_status_idx ON kaitori_job_rows(job_i
 CREATE INDEX IF NOT EXISTS kaitori_job_logs_job_idx ON kaitori_job_logs(job_id, id);
 CREATE INDEX IF NOT EXISTS kaitori_comments_source_idx ON kaitori_comments(source_id, id);
 
+CREATE TABLE IF NOT EXISTS kaitori_sellers (
+  seller_id TEXT PRIMARY KEY,
+  gallery_id TEXT NOT NULL,
+  display_name TEXT NOT NULL DEFAULT '',
+  author_type TEXT NOT NULL DEFAULT 'unknown',
+  identity_scope TEXT NOT NULL DEFAULT 'post',
+  first_seen_at TEXT NOT NULL DEFAULT '',
+  last_seen_at TEXT NOT NULL DEFAULT '',
+  observed_post_count INTEGER NOT NULL DEFAULT 0,
+  sell_post_count INTEGER NOT NULL DEFAULT 0,
+  buy_post_count INTEGER NOT NULL DEFAULT 0,
+  completed_post_count INTEGER NOT NULL DEFAULT 0,
+  repost_count INTEGER NOT NULL DEFAULT 0,
+  risk_score INTEGER NOT NULL DEFAULT 0,
+  risk_level TEXT NOT NULL DEFAULT 'low',
+  review_status TEXT NOT NULL DEFAULT 'unreviewed',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kaitori_risk_signals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  seller_id TEXT NOT NULL REFERENCES kaitori_sellers(seller_id),
+  source_id TEXT NOT NULL REFERENCES kaitori_sources(id),
+  code TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  score_delta INTEGER NOT NULL DEFAULT 0,
+  message TEXT NOT NULL,
+  evidence_text TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (seller_id, source_id, code)
+);
+
+CREATE TABLE IF NOT EXISTS kaitori_seller_reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  seller_id TEXT NOT NULL REFERENCES kaitori_sellers(seller_id),
+  actor TEXT NOT NULL,
+  action TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  evidence_url TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS kaitori_demand_snapshots (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   snapshot_date TEXT NOT NULL,
@@ -253,10 +305,18 @@ class Repository:
             "post_status": "TEXT NOT NULL DEFAULT 'active'",
             "image_count": "INTEGER NOT NULL DEFAULT 0",
             "body_characters": "INTEGER NOT NULL DEFAULT 0",
+            "seller_id": "TEXT",
+            "identity_scope": "TEXT NOT NULL DEFAULT 'post'",
+            "post_family_id": "TEXT",
+            "listing_fingerprint": "TEXT",
+            "repost_of_source_id": "TEXT",
+            "is_repost": "INTEGER NOT NULL DEFAULT 0",
         }
         for column, definition in source_additions.items():
             if column not in source_columns:
                 self.connection.execute(f"ALTER TABLE kaitori_sources ADD COLUMN {column} {definition}")
+        self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_sources_seller_idx ON kaitori_sources(seller_id, posted_at)")
+        self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_risk_seller_idx ON kaitori_risk_signals(seller_id, status, id)")
 
     def close(self) -> None:
         self.connection.close()
@@ -366,10 +426,18 @@ class Repository:
         raw_html = str(source.get("raw_html") or "")
         content_hash = str(source.get("content_hash") or _hash_text(raw_html)).strip()
         source_id = _hash_text(f"{post_url}\n{content_hash}")[:24]
+        post_id = str(source.get("post_id") or parse_qs(urlparse(post_url).query).get("no", [""])[0])
+        identity = build_seller_identity(
+            str(source.get("gallery_id") or ""),
+            str(source.get("author_name") or ""),
+            str(source.get("author_type") or "unknown"),
+            source_id,
+        )
+        post_family_id = build_post_family_id(str(source.get("gallery_id") or ""), post_url, post_id)
         values = (
             source_id,
             str(source.get("gallery_id") or ""),
-            str(source.get("post_id") or parse_qs(urlparse(post_url).query).get("no", [""])[0]),
+            post_id,
             post_url,
             str(source.get("title") or ""),
             str(source.get("posted_at") or ""),
@@ -382,20 +450,23 @@ class Repository:
             str(source.get("fetched_at") or utc_now()),
             content_hash,
             str(source.get("source_status") or "active"),
+            identity.seller_id,
+            identity.identity_scope,
+            post_family_id,
         )
         cursor = self.connection.execute(
             """INSERT OR IGNORE INTO kaitori_sources
-            (id, gallery_id, post_id, post_url, title, posted_at, author_name, author_type, post_status, image_count, body_characters, raw_html, fetched_at, content_hash, source_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, gallery_id, post_id, post_url, title, posted_at, author_name, author_type, post_status, image_count, body_characters, raw_html, fetched_at, content_hash, source_status, seller_id, identity_scope, post_family_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             values,
         )
         self.connection.execute(
             """UPDATE kaitori_sources
                SET author_name = CASE WHEN ? <> '' THEN ? ELSE author_name END,
                    author_type = CASE WHEN ? <> 'unknown' THEN ? ELSE author_type END,
-                   post_status = ?, image_count = ?, body_characters = ?
+                   post_status = ?, image_count = ?, body_characters = ?, seller_id = ?, identity_scope = ?, post_family_id = ?
                WHERE id = ?""",
-            (values[6], values[6], values[7], values[7], values[8], values[9], values[10], source_id),
+            (values[6], values[6], values[7], values[7], values[8], values[9], values[10], values[15], values[16], values[17], source_id),
         )
         self.connection.commit()
         return source_id, cursor.rowcount == 1
@@ -583,10 +654,177 @@ class Repository:
         self.connection.commit()
         return {"sources": source_count, "rows": row_count}
 
+    def analyze_source_risk(self, source_id: str) -> dict[str, Any]:
+        """Link a source to a seller and rebuild its deterministic review signals."""
+        source = self.get_source(source_id)
+        if source is None:
+            raise KeyError(f"source not found: {source_id}")
+        identity = build_seller_identity(source["gallery_id"], source.get("author_name", ""), source.get("author_type", "unknown"), source_id)
+        post_family_id = source.get("post_family_id") or build_post_family_id(source["gallery_id"], source["post_url"], source.get("post_id", ""))
+        rows = [dict(row) for row in self.connection.execute("SELECT * FROM kaitori_rows WHERE source_id = ?", (source_id,)).fetchall()]
+        fingerprint = build_listing_fingerprint(source, rows)
+        previous = self.connection.execute(
+            """SELECT id, post_status, posted_at FROM kaitori_sources
+               WHERE seller_id = ? AND listing_fingerprint = ? AND id <> ?
+               ORDER BY posted_at DESC LIMIT 1""",
+            (identity.seller_id, fingerprint, source_id),
+        ).fetchone()
+        completed_revision = self.connection.execute(
+            """SELECT id FROM kaitori_sources
+               WHERE post_family_id = ? AND id <> ? AND post_status = 'completed'
+               LIMIT 1""",
+            (post_family_id, source_id),
+        ).fetchone()
+        is_repost = int(previous is not None or completed_revision is not None)
+        repost_of = (previous["id"] if previous else completed_revision["id"] if completed_revision else None)
+        now = utc_now()
+        self.connection.execute(
+            """UPDATE kaitori_sources SET seller_id = ?, identity_scope = ?, post_family_id = ?,
+               listing_fingerprint = ?, repost_of_source_id = ?, is_repost = ? WHERE id = ?""",
+            (identity.seller_id, identity.identity_scope, post_family_id, fingerprint, repost_of, is_repost, source_id),
+        )
+        self.connection.execute(
+            """INSERT OR IGNORE INTO kaitori_sellers
+               (seller_id, gallery_id, display_name, author_type, identity_scope, first_seen_at, last_seen_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (identity.seller_id, source["gallery_id"], identity.display_name, identity.author_type, identity.identity_scope, source.get("posted_at", ""), source.get("posted_at", ""), now, now),
+        )
+        self.connection.execute(
+            """UPDATE kaitori_sellers SET display_name = ?, author_type = ?, identity_scope = ?,
+               first_seen_at = CASE WHEN first_seen_at = '' OR first_seen_at > ? THEN ? ELSE first_seen_at END,
+               last_seen_at = CASE WHEN last_seen_at < ? THEN ? ELSE last_seen_at END,
+               updated_at = ? WHERE seller_id = ?""",
+            (identity.display_name, identity.author_type, identity.identity_scope, source.get("posted_at", ""), source.get("posted_at", ""), source.get("posted_at", ""), source.get("posted_at", ""), now, identity.seller_id),
+        )
+        text = " ".join([str(source.get("title") or ""), str(source.get("raw_html") or "")])
+        signals = detect_text_signals(text)
+        if is_repost:
+            signals.append({"code": "repeated_listing", "severity": "medium", "score_delta": 20, "message": "같은 판매자의 유사 매물이 반복 등록되었습니다."})
+        if completed_revision is not None:
+            signals.append({"code": "completed_repost", "severity": "medium", "score_delta": 20, "message": "거래완료 게시글과 같은 게시글 계열이 다시 관찰되었습니다."})
+        if source.get("post_status") == "image_only" and not rows:
+            signals.append({"code": "image_only_listing", "severity": "low", "score_delta": 8, "message": "본문 가격·카드명이 없어 사진 확인이 필요한 매물입니다."})
+        recent_posts = self.connection.execute(
+            """SELECT COUNT(*) FROM kaitori_sources WHERE seller_id = ?
+               AND posted_at >= datetime(?, '-1 day')""",
+            (identity.seller_id, source.get("posted_at") or now),
+        ).fetchone()[0]
+        if int(recent_posts) >= 5:
+            signals.append({"code": "high_post_velocity", "severity": "low", "score_delta": 10, "message": "짧은 기간에 여러 게시글이 등록되어 활동량 확인이 필요합니다."})
+        for signal in signals:
+            self.connection.execute(
+                """INSERT INTO kaitori_risk_signals
+                   (seller_id, source_id, code, severity, score_delta, message, evidence_text, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+                   ON CONFLICT(seller_id, source_id, code) DO UPDATE SET severity = excluded.severity,
+                     score_delta = excluded.score_delta, message = excluded.message, evidence_text = excluded.evidence_text,
+                     updated_at = excluded.updated_at""",
+                (identity.seller_id, source_id, signal["code"], signal["severity"], signal["score_delta"], signal["message"], signal["message"], now, now),
+            )
+        stats = self.connection.execute(
+            """SELECT COUNT(*) AS posts,
+               SUM(CASE WHEN post_status = 'completed' THEN 1 ELSE 0 END) AS completed,
+               SUM(CASE WHEN is_repost = 1 THEN 1 ELSE 0 END) AS reposts
+               FROM kaitori_sources WHERE seller_id = ?""",
+            (identity.seller_id,),
+        ).fetchone()
+        listing_stats = self.connection.execute(
+            """SELECT COUNT(DISTINCT CASE WHEN r.listing_type = 'sell' THEN r.source_id END) AS sells,
+               COUNT(DISTINCT CASE WHEN r.listing_type = 'buy' THEN r.source_id END) AS buys
+               FROM kaitori_rows r JOIN kaitori_sources s ON s.id = r.source_id WHERE s.seller_id = ?""",
+            (identity.seller_id,),
+        ).fetchone()
+        score = self.connection.execute(
+            "SELECT COALESCE(SUM(score_delta), 0) FROM kaitori_risk_signals WHERE seller_id = ? AND status = 'open'",
+            (identity.seller_id,),
+        ).fetchone()[0]
+        self.connection.execute(
+            """UPDATE kaitori_sellers SET observed_post_count = ?, sell_post_count = ?, buy_post_count = ?,
+               completed_post_count = ?, repost_count = ?, risk_score = ?, risk_level = ?, updated_at = ? WHERE seller_id = ?""",
+            (int(stats["posts"] or 0), int(listing_stats["sells"] or 0), int(listing_stats["buys"] or 0), int(stats["completed"] or 0), int(stats["reposts"] or 0), min(100, int(score)), risk_level(int(score)), now, identity.seller_id),
+        )
+        self.connection.commit()
+        seller = self.get_seller(identity.seller_id)
+        assert seller is not None
+        return seller
+
+    def reprocess_seller_risk(self) -> dict[str, int]:
+        source_ids = [row[0] for row in self.connection.execute("SELECT id FROM kaitori_sources ORDER BY id").fetchall()]
+        for source_id in source_ids:
+            self.analyze_source_risk(source_id)
+        return {"sources": len(source_ids), "sellers": int(self.connection.execute("SELECT COUNT(*) FROM kaitori_sellers").fetchone()[0])}
+
+    def list_sellers(self, *, game_id: str = "", query_text: str = "", risk_level_filter: str = "", limit: int = 200) -> list[dict[str, Any]]:
+        query = """SELECT s.*, COUNT(DISTINCT rs.id) AS open_signal_count
+                   FROM kaitori_sellers s LEFT JOIN kaitori_risk_signals rs
+                   ON rs.seller_id = s.seller_id AND rs.status = 'open' WHERE 1=1"""
+        values: list[Any] = []
+        if game_id:
+            query += " AND s.gallery_id = ?"
+            values.append(game_id)
+        if query_text.strip():
+            query += " AND s.display_name LIKE ?"
+            values.append(f"%{query_text.strip()}%")
+        if risk_level_filter in {"low", "medium", "high"}:
+            query += " AND s.risk_level = ?"
+            values.append(risk_level_filter)
+        query += " GROUP BY s.seller_id ORDER BY s.risk_score DESC, s.last_seen_at DESC LIMIT ?"
+        values.append(max(1, min(int(limit), 1000)))
+        return [dict(row) for row in self.connection.execute(query, values).fetchall()]
+
+    def get_seller(self, seller_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute("SELECT * FROM kaitori_sellers WHERE seller_id = ?", (seller_id,)).fetchone()
+        if row is None:
+            return None
+        seller = dict(row)
+        seller["sources"] = [dict(item) for item in self.connection.execute(
+            """SELECT id, post_url, title, posted_at, post_status, is_repost, repost_of_source_id
+               FROM kaitori_sources WHERE seller_id = ? ORDER BY posted_at DESC, id DESC LIMIT 200""", (seller_id,)
+        ).fetchall()]
+        seller["signals"] = self.list_risk_signals(seller_id=seller_id, limit=500)
+        return seller
+
+    def list_risk_signals(self, *, seller_id: str = "", severity: str = "", status: str = "", limit: int = 200) -> list[dict[str, Any]]:
+        query = "SELECT * FROM kaitori_risk_signals WHERE 1=1"
+        values: list[Any] = []
+        if seller_id:
+            query += " AND seller_id = ?"
+            values.append(seller_id)
+        if severity in {"low", "medium", "high"}:
+            query += " AND severity = ?"
+            values.append(severity)
+        if status in {"open", "dismissed"}:
+            query += " AND status = ?"
+            values.append(status)
+        query += " ORDER BY id DESC LIMIT ?"
+        values.append(max(1, min(int(limit), 1000)))
+        return [dict(row) for row in self.connection.execute(query, values).fetchall()]
+
+    def review_seller(self, seller_id: str, action: SellerReviewAction) -> dict[str, Any]:
+        if self.get_seller(seller_id) is None:
+            raise KeyError(f"seller not found: {seller_id}")
+        now = utc_now()
+        review_status = {"watch": "watching", "clear": "unreviewed", "mark_safe": "safe", "confirm_risk": "confirmed", "note": "noted"}[action.action]
+        self.connection.execute(
+            "INSERT INTO kaitori_seller_reviews (seller_id, actor, action, note, evidence_url, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (seller_id, action.actor, action.action, action.note, action.evidence_url, now),
+        )
+        if action.action == "clear":
+            self.connection.execute("UPDATE kaitori_risk_signals SET status = 'dismissed', updated_at = ? WHERE seller_id = ?", (now, seller_id))
+        self.connection.execute("UPDATE kaitori_sellers SET review_status = ?, updated_at = ? WHERE seller_id = ?", (review_status, now, seller_id))
+        if action.action == "clear":
+            self.connection.execute("UPDATE kaitori_sellers SET risk_score = 0, risk_level = 'low' WHERE seller_id = ?", (seller_id,))
+        self.connection.commit()
+        return self.get_seller(seller_id) or {}
+
     def list_rows(self, *, job_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
-        query = """SELECT r.*, s.gallery_id, s.post_url, s.title AS post_title, s.posted_at, s.raw_html, s.author_name, s.author_type
+        query = """SELECT r.*, s.gallery_id, s.post_url, s.title AS post_title, s.posted_at, s.raw_html, s.author_name, s.author_type,
+                          s.seller_id, s.identity_scope, s.post_family_id, s.is_repost,
+                          sl.display_name AS seller_display_name, sl.risk_score AS seller_risk_score,
+                          sl.risk_level AS seller_risk_level, sl.review_status AS seller_review_status
                    FROM kaitori_rows r
                    JOIN kaitori_sources s ON s.id = r.source_id
+                   LEFT JOIN kaitori_sellers sl ON sl.seller_id = s.seller_id
                    LEFT JOIN kaitori_job_rows jr ON jr.row_id = r.id
                    WHERE 1=1"""
         values: list[Any] = []
@@ -614,9 +852,13 @@ class Repository:
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         query = """SELECT DISTINCT r.*, s.gallery_id, s.post_url, s.title AS post_title,
-                   s.posted_at, s.source_status, s.author_name, s.author_type
+                   s.posted_at, s.source_status, s.author_name, s.author_type, s.seller_id,
+                   s.identity_scope, s.post_family_id, s.is_repost,
+                   sl.display_name AS seller_display_name, sl.risk_score AS seller_risk_score,
+                   sl.risk_level AS seller_risk_level, sl.review_status AS seller_review_status
                    FROM kaitori_rows r
                    JOIN kaitori_sources s ON s.id = r.source_id
+                   LEFT JOIN kaitori_sellers sl ON sl.seller_id = s.seller_id
                    WHERE 1=1"""
         values: list[Any] = []
         if game_id:

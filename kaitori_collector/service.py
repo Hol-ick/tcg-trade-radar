@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 from . import __version__
 from .browser_transport import BrowserTransportError
 from .comments import parse_comments
-from .contracts import JobRequest, ReviewAction, utc_now
+from .contracts import JobRequest, ReviewAction, SellerReviewAction, utc_now
 from .html import DCInsideHTMLParser, parse_html, normalize_space
 from .observability import inspect_source_response, is_retryable_error, retry_delay
 from .parser import CSV_FIELDS, SourceResponseError, build_list_url, extract_comment_token, extract_post, fetch_comment_text_auto, fetch_text_auto
@@ -153,6 +153,8 @@ class JobService:
                     self.repository.attach_source_to_job(job_id, source_id)
                     comments_inserted = self._collect_comments(job_id, post_url, request.gallery_id, post_html, source_id, request)
                     inserted_rows = self.repository.insert_rows(job_id, source_id, extracted_rows)
+                    seller = self.repository.analyze_source_risk(source_id)
+                    self._log(job_id, step="risk", message="판매자 분석 완료", details={"seller_id": seller.get("seller_id"), "risk_level": seller.get("risk_level"), "risk_score": seller.get("risk_score"), "signal_count": len(seller.get("signals", []))})
                     self._log(job_id, step="store", message=f"원문·결과 저장 완료 · 신규 행 {inserted_rows}개 / 댓글 {comments_inserted}개", details={"url": post_url, "rows": len(extracted_rows), "inserted": inserted_rows, "comments": comments_inserted})
                     if self.catalog:
                         from .matcher import match_card
@@ -219,6 +221,11 @@ class JobService:
             item["buy_price_krw"] = round(item["price_krw"] * job["buy_rate"] / 100) if item["price_krw"] is not None else None
             item["listing_type"] = item.get("listing_type") or "unknown"
             item["price_type"] = item.get("price_type") or "unknown"
+            item["seller_id"] = item.get("seller_id") or ""
+            item["seller_name"] = item.get("seller_display_name") or item.get("author_name") or "미상"
+            item["seller_risk_score"] = int(item.get("seller_risk_score") or 0)
+            item["seller_risk_level"] = item.get("seller_risk_level") or "low"
+            item["seller_review_status"] = item.get("seller_review_status") or "unreviewed"
             item["exportable"] = item["status"] in {"approved", "exported"}
             result.append(item)
         return result
@@ -242,8 +249,23 @@ class JobService:
     def get_demand_snapshots(self, **filters: Any) -> list[dict[str, Any]]:
         return self.repository.list_demand_snapshots(**filters)
 
+    def get_sellers(self, **filters: Any) -> list[dict[str, Any]]:
+        return self.repository.list_sellers(**filters)
+
+    def get_seller(self, seller_id: str) -> dict[str, Any]:
+        seller = self.repository.get_seller(seller_id)
+        if seller is None:
+            raise KeyError(f"seller not found: {seller_id}")
+        return seller
+
+    def get_risk_signals(self, **filters: Any) -> list[dict[str, Any]]:
+        return self.repository.list_risk_signals(**filters)
+
     def review_row(self, row_id: str, action: ReviewAction) -> dict[str, Any]:
         return self.repository.record_review(row_id, action)
+
+    def review_seller(self, seller_id: str, action: SellerReviewAction) -> dict[str, Any]:
+        return self.repository.review_seller(seller_id, action)
 
     def export_results(self, job_id: str) -> list[dict[str, Any]]:
         rows = self.repository.export_approved_rows(job_id)

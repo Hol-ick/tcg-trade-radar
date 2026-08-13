@@ -70,6 +70,18 @@ select, input { width: 100%; min-height: 43px; border: 2px solid #e5e7eb; border
 .type-chip, .review-chip { display: inline-block; width: fit-content; padding: 3px 7px; border: 1px solid #d1d5db; border-radius: 999px; background: #f9fafb; color: #4b5563; font-size: 11px; font-weight: 700; }.review-chip.ok { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }.review-chip.review { border-color: #fde68a; background: #fffbeb; color: #b45309; }.quality-note { margin-top: 4px; color: #9ca3af; font-size: 10px; font-weight: 600; }.row-link { color: #6b7280; }
 .empty-state { display: grid; min-height: 210px; place-items: center; padding: 24px; color: #6b7280; font-size: 14px; }
 .footer-note { padding-top: 16px; color: #6b7280; font-size: 12px; }
-@media (max-width: 840px) { .control-grid, .summary-row, .collector-options { grid-template-columns: 1fr 1fr; }.action-field { grid-column: 1 / -1; }.summary-cell:first-child { grid-column: 1 / -1; } }
-@media (max-width: 560px) { .topbar, .content-wrap { padding-left: 16px; padding-right: 16px; }.topbar { padding-top: 16px; padding-bottom: 16px; }.content-wrap { padding-top: 20px; }.control-panel { padding: 16px; }.panel-heading { align-items: start; flex-direction: column; }.control-grid, .summary-row, .collector-options { grid-template-columns: 1fr; }.action-field, .summary-cell:first-child { grid-column: auto; }.week-buttons strong, .range-buttons strong { font-size: 13px; }.source-state { display: none; } }
+.seller-panel { margin-top: 18px; overflow: hidden; border: 2px solid #111827; border-radius: 8px; background: #fff; }
+.seller-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; }
+.seller-card { padding: 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
+.seller-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.seller-card-heading .risk-chip { display: inline-flex; align-items: center; gap: 3px; margin: 0; }
+.seller-card p { margin: 8px 0 0; color: #6b7280; font-size: 12px; }
+.seller-card small { display: block; margin-top: 12px; color: #374151; font-size: 11px; font-weight: 700; }
+@media (max-width: 840px) { .control-grid, .summary-row, .collector-options { grid-template-columns: 1fr 1fr; }.seller-grid { grid-template-columns: 1fr 1fr; }.action-field { grid-column: 1 / -1; }.summary-cell:first-child { grid-column: 1 / -1; } }
+@media (max-width: 560px) { .topbar, .content-wrap { padding-left: 16px; padding-right: 16px; }.topbar { padding-top: 16px; padding-bottom: 16px; }.content-wrap { padding-top: 20px; }.control-panel { padding: 16px; }.panel-heading { align-items: start; flex-direction: column; }.control-grid, .summary-row, .collector-options { grid-template-columns: 1fr; }.seller-grid { grid-template-columns: 1fr; }.action-field, .summary-cell:first-child { grid-column: auto; }.week-buttons strong, .range-buttons strong { font-size: 13px; }.source-state { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; } }
+ .seller-name { display: block; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .risk-chip { display: inline-block; margin-top: .25rem; font-size: .72rem; font-weight: 700; }
+ .risk-low { color: #3d7254; }
+ .risk-medium { color: #a66a17; }
+ .risk-high { color: #b84747; }
