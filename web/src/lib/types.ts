@@ -73,7 +73,7 @@ export type SnapshotState =
   | { kind: "missing"; snapshot: WeekSnapshot }
   | { kind: "error"; message: string }
 
-// Kept for the existing Python API tests and old local tools; the web app no longer uses these worker contracts.
+// Worker contracts used by the live collection console.
 export type JobState = "queued" | "running" | "completed" | "failed"
 export type JobRequest = {
   gallery_id: string

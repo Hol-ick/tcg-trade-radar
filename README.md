@@ -1,24 +1,29 @@
 # TCG Trade Radar
 
-## 주간 정적 수집 콘솔
+## 실제 수집 웹 콘솔
 
-웹 화면은 더 이상 로컬 HTTP worker나 브라우저 API를 호출하지 않습니다. 원본 게시판은 CORS를 제공하지 않기 때문에, GitHub Actions가 일회성 Python 수집을 실행하고 다음 정적 파일을 커밋합니다.
-
-```text
-web/public/data/weeks/<gallery_id>/<since>.json
-web/public/data/weeks/<gallery_id>/<since>.csv
-```
-
-`since`부터 6일 뒤까지가 포함된 정확히 7일 범위입니다. 웹 화면의 `이전 주`, `다음 주`, `이번 주` 버튼은 이 범위를 7일씩 이동합니다. 화면의 `주간 수집 실행` 링크에서 `Collect weekly snapshot` workflow를 수동 실행할 수 있고, 매주 월요일에는 기본 TCG 갤러리가 자동 수집됩니다. 수집은 `python scripts/export_week_snapshot.py ...`로 한 번만 실행되며 서버를 띄우지 않습니다.
+웹 화면의 `수집 시작` 버튼이 로컬 Python 워커의 `POST /jobs`를 호출합니다. 조회 기간은 기본 7일로 채워지며, 게임은 미리 등록된 5개 프리셋에서 고릅니다. 수집 중에는 단계별 로그와 결과를 화면에서 확인할 수 있습니다.
 
 디시인사이드 TCG 갤러리의 유저 거래 글을 모아 카드 거래 동향을 살펴보는 도구입니다.
 
-현재는 별도 워커나 브라우저 연결 없이 Python 데스크톱 앱 하나로 실행합니다.
-게임은 미리 등록된 5개 프리셋에서 고르고, 최근 7일의 판매·구매·교환 글을 수집합니다.
+실제 수집에는 로컬 워커가 필요합니다. GitHub Pages는 정적 호스팅이므로 원본 게시판을 직접 수집하지 않습니다.
 
 ## 실행
 
-Windows에서는 [`debug/run-kaitori.bat`](debug/run-kaitori.bat)을 실행합니다.
+먼저 터미널에서 워커를 실행합니다.
+
+```powershell
+python -m kaitori_collector --serve --host 127.0.0.1 --port 8787 --db .audit\kaitori.sqlite3
+```
+
+다른 터미널에서 웹 콘솔을 실행합니다.
+
+```powershell
+pnpm --config.minimum-release-age=0 --dir web install
+pnpm --config.minimum-release-age=0 --dir web dev --host 127.0.0.1 --port 5173
+```
+
+`http://127.0.0.1:5173`을 열고 게임·기간·최근 게시글 수를 설정한 뒤 `수집 시작`을 누릅니다. Windows에서 Python 데스크톱 앱을 사용하려면 [`debug/run-kaitori.bat`](debug/run-kaitori.bat)을 실행할 수도 있습니다.
 
 처음 실행하는 환경은 프로젝트 폴더에서 `python -m pip install -e .`로 Playwright 의존성을 설치합니다. Chrome이 설치되어 있으면 자동 사용하며, 화면을 보면서 확인하려면 `TCG_TRADE_BROWSER_HEADLESS=0`을 설정합니다.
 
@@ -93,22 +98,19 @@ python -m unittest discover -s tests -v
 python -m compileall -q kaitori_collector debug tests scripts
 ```
 
-## 웹 콘솔과 주간 수집
+## 웹 콘솔과 실제 수집
 
-웹 화면은 정적 주간 스냅샷을 읽습니다. 로컬에서 화면만 확인하려면 다음을 실행합니다.
-
-```powershell
-pnpm --dir web install
-pnpm --dir web dev --host 127.0.0.1 --port 5173
-```
-
-실제 수집은 화면에서 직접 실행하지 않고 GitHub Actions의 `Collect weekly snapshot` 워크플로에서 수행합니다. 동일한 작업을 로컬에서 확인하려면 다음처럼 7일 범위와 갤러리를 지정합니다.
+워커와 웹 화면을 각각 실행합니다.
 
 ```powershell
-python scripts/export_week_snapshot.py --since 2026-08-07 --until 2026-08-13 --gallery-id tcggame
+python -m kaitori_collector --serve --host 127.0.0.1 --port 8787 --db .audit\kaitori.sqlite3
+pnpm --config.minimum-release-age=0 --dir web install
+pnpm --config.minimum-release-age=0 --dir web dev --host 127.0.0.1 --port 5173
 ```
 
-실행 결과는 `web/public/data/weeks/<gallery_id>/<since>.json`과 `.csv`로 저장됩니다. 가격이 이미지에만 있는 글은 자동 확정하지 않고 검토 대상으로 남기며, CAPTCHA나 차단 우회는 사용하지 않습니다.
+두 번째 터미널에서 웹 화면을 실행한 뒤 `http://127.0.0.1:5173`을 엽니다. `수집 시작`은 선택한 게임·기간·게시글 수를 Python 워커에 전달하고, 수집 중 로그와 결과를 화면에 표시합니다. 기간 기본값은 최근 7일일 뿐 별도 주간 수집 기능은 아닙니다.
+
+가격이 이미지에만 있는 글은 자동 확정하지 않고 검토 대상으로 남기며, CAPTCHA나 차단 우회는 사용하지 않습니다.
 
 ## 범위와 주의사항
 

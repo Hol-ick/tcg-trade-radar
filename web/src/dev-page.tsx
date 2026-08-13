@@ -1,5 +1,5 @@
-import { WeeklyConsole } from "./App"
+import { LiveConsole } from "./App"
 
 export function DevPage() {
-  return <WeeklyConsole dev />
+  return <LiveConsole dev />
 }
