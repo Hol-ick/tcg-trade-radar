@@ -82,7 +82,7 @@ export function WeeklyConsole({ dev = false }: { dev?: boolean }) {
           <div className="panel-heading">
             <div>
               <p className="eyebrow">주간 수집</p>
-              <h1 id="page-title">판매글을 주 단위로 확인합니다.</h1>
+              <h1 id="page-title">거래글을 주 단위로 확인합니다.</h1>
             </div>
             <a className="text-link" href={gallery.url} target="_blank" rel="noreferrer">
               원본 게시판 <ExternalLink size={15} aria-hidden="true" />
@@ -118,7 +118,7 @@ export function WeeklyConsole({ dev = false }: { dev?: boolean }) {
 
         <section className="summary-row" aria-label="수집 요약">
           <SummaryCell label="기간" value={formatRange(range)} />
-          <SummaryCell label="판매 행" value={`${rowCount}건`} accent="blue" />
+          <SummaryCell label="거래 행" value={`${rowCount}건`} accent="blue" />
           <SummaryCell label="검토 필요" value={`${reviewCount}건`} accent="amber" />
           <SummaryCell label="상태" value={visibleState.kind === "ready" ? "확인 가능" : visibleState.kind === "loading" ? "읽는 중" : visibleState.kind === "missing" ? "수집 대기" : "읽기 실패"} accent="green" />
         </section>
