@@ -27,6 +27,15 @@ def sample_row() -> ExtractedRow:
 
 
 class StorageTests(unittest.TestCase):
+    def test_risk_analysis_lookup_has_post_family_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+
+            indexes = {row[1] for row in repo.connection.execute("PRAGMA index_list(kaitori_sources)").fetchall()}
+
+            self.assertIn("kaitori_sources_post_family_idx", indexes)
+            repo.close()
+
     def test_attaching_existing_source_also_attaches_existing_rows(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "kaitori.sqlite3")

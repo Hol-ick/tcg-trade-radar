@@ -316,6 +316,7 @@ class Repository:
             if column not in source_columns:
                 self.connection.execute(f"ALTER TABLE kaitori_sources ADD COLUMN {column} {definition}")
         self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_sources_seller_idx ON kaitori_sources(seller_id, posted_at)")
+        self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_sources_post_family_idx ON kaitori_sources(post_family_id, post_status)")
         self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_risk_seller_idx ON kaitori_risk_signals(seller_id, status, id)")
 
     def close(self) -> None:
