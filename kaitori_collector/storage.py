@@ -527,11 +527,32 @@ class Repository:
         return [dict(row) for row in self.connection.execute(query, values).fetchall()]
 
     def attach_source_to_job(self, job_id: str, source_id: str) -> None:
+        now = utc_now()
         self.connection.execute(
             "INSERT OR IGNORE INTO kaitori_job_sources (job_id, source_id, created_at) VALUES (?, ?, ?)",
-            (job_id, source_id, utc_now()),
+            (job_id, source_id, now),
+        )
+        self.connection.execute(
+            """INSERT OR IGNORE INTO kaitori_job_rows (job_id, row_id, created_at)
+               SELECT ?, id, ? FROM kaitori_rows WHERE source_id = ?""",
+            (job_id, now, source_id),
         )
         self.connection.commit()
+
+    def find_source_for_post(self, gallery_id: str, post_url: str) -> dict[str, Any] | None:
+        parsed = urlparse(post_url)
+        post_id = parse_qs(parsed.query).get("no", [""])[0]
+        if not post_id:
+            parts = [part for part in parsed.path.split("/") if part]
+            post_id = parts[-1] if parts and parts[-1].isdigit() else ""
+        row = self.connection.execute(
+            """SELECT * FROM kaitori_sources
+               WHERE gallery_id = ? AND (post_url = ? OR (? <> '' AND post_id = ?))
+               ORDER BY fetched_at DESC, id DESC
+               LIMIT 1""",
+            (gallery_id, post_url, post_id, post_id),
+        ).fetchone()
+        return dict(row) if row else None
 
     def get_source(self, source_id: str) -> dict[str, Any] | None:
         row = self.connection.execute("SELECT * FROM kaitori_sources WHERE id = ?", (source_id,)).fetchone()

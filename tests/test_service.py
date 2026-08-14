@@ -118,6 +118,29 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(status["counts"]["rows"], 0)
             repo.close()
 
+    def test_existing_source_is_reused_without_fetching_post_again(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            calls: list[str] = []
+
+            def fetcher(url: str) -> str:
+                calls.append(url)
+                return LIST_HTML if "lists" in url else POST_HTML
+
+            service = JobService(repo, fetcher=fetcher, sleep=lambda _: None)
+            request = JobRequest(gallery_id="tcggame", max_posts=2, max_pages=1, delay=0)
+            first_job = service.create_job(request, start=False)
+            service.run_job(first_job)
+            calls.clear()
+
+            second_job = service.create_job(request, start=False)
+            service.run_job(second_job)
+
+            self.assertTrue(any("lists" in url for url in calls))
+            self.assertFalse(any("lists" not in url for url in calls))
+            self.assertEqual(service.get_job_status(second_job)["counts"]["rows"], 1)
+            repo.close()
+
     def test_failed_job_can_be_retried_and_existing_rows_are_kept(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "kaitori.sqlite3")

@@ -27,6 +27,27 @@ def sample_row() -> ExtractedRow:
 
 
 class StorageTests(unittest.TestCase):
+    def test_attaching_existing_source_also_attaches_existing_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            first_job = repo.create_job(JobRequest(gallery_id="tcggame"))
+            second_job = repo.create_job(JobRequest(gallery_id="tcggame"))
+            source_id, _ = repo.upsert_source({
+                "gallery_id": "tcggame",
+                "post_id": "1",
+                "post_url": "https://example.test/post/1",
+                "title": "판매 카드",
+                "posted_at": "2026-08-12T10:00:00+09:00",
+                "raw_html": "<html>sale</html>",
+            })
+            repo.attach_source_to_job(first_job, source_id)
+            repo.insert_rows(first_job, source_id, [sample_row()])
+
+            repo.attach_source_to_job(second_job, source_id)
+
+            self.assertEqual(len(repo.list_rows(job_id=second_job)), 1)
+            repo.close()
+
     def test_find_latest_job_matches_collection_watermark(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "kaitori.sqlite3")

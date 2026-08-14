@@ -105,6 +105,28 @@ class JobService:
                         continue
                     seen_urls.add(post_url)
                     posts_seen += 1
+                    existing_source = self.repository.find_source_for_post(request.gallery_id, post_url)
+                    if existing_source and existing_source.get("posted_at"):
+                        posted_at = existing_source["posted_at"]
+                        if request.since and _is_before_date(posted_at, request.since):
+                            page_has_older_post = True
+                        if _date_in_range(posted_at, request.since, request.until, request.cutoff_at):
+                            page_has_in_range_post = True
+                            self.repository.attach_source_to_job(job_id, existing_source["id"])
+                            self._log(
+                                job_id,
+                                step="reuse",
+                                message="기존 게시글·거래 행 재사용",
+                                details={"url": post_url, "source_id": existing_source["id"], "posted_at": posted_at},
+                            )
+                        else:
+                            self._log(
+                                job_id,
+                                step="reuse",
+                                message="기존 게시글이 수집 범위 밖이라 제외",
+                                details={"url": post_url, "source_id": existing_source["id"], "posted_at": posted_at},
+                            )
+                        continue
                     self._log(job_id, step="post", message=f"게시글 요청 시작 · {posts_seen}/{request.max_posts}", details={"url": post_url})
                     post_html = self._fetch_with_retry(job_id, post_url, request, "post")
                     post_profile = inspect_source_response(post_html, post_url, expected="post")
