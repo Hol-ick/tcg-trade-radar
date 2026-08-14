@@ -58,6 +58,22 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(found["id"], source_id)
             repo.close()
 
+    def test_repository_backfills_post_id_for_legacy_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "kaitori.sqlite3"
+            repo = Repository(path)
+            repo.connection.execute(
+                "INSERT INTO kaitori_sources (id, gallery_id, post_url, fetched_at, content_hash) VALUES (?, ?, ?, ?, ?)",
+                ("legacy-source", "tcggame", "https://example.test/post/view/?id=tcggame&no=42&page=9", "2026-08-12", "hash"),
+            )
+            repo.connection.commit()
+            repo.close()
+
+            reopened = Repository(path)
+            row = reopened.connection.execute("SELECT post_id FROM kaitori_sources WHERE id = ?", ("legacy-source",)).fetchone()
+            self.assertEqual(row["post_id"], "42")
+            reopened.close()
+
     def test_attaching_existing_source_also_attaches_existing_rows(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "kaitori.sqlite3")

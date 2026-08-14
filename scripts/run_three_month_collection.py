@@ -1,4 +1,4 @@
-"""Collect all configured card-trade posts in a calendar three-month window."""
+"""Collect all configured card-trade posts in a calendar date window."""
 from __future__ import annotations
 
 import argparse
@@ -51,8 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--delay", type=float, default=0.25)
     parser.add_argument("--fetch-concurrency", type=int, default=4)
-    parser.add_argument("--max-posts", type=int, default=200_000)
-    parser.add_argument("--max-pages", type=int, default=20_000)
+    parser.add_argument("--max-posts", type=int, default=20_000)
+    parser.add_argument("--max-pages", type=int, default=5_000)
     parser.add_argument("--game-id", action="append", choices=[game["id"] for game in GAMES])
     parser.add_argument("--no-resume", action="store_true", help="기존 동일 워터마크 작업을 재사용하지 않음")
     return parser

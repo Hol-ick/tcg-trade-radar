@@ -134,6 +134,8 @@ class JobServiceTests(unittest.TestCase):
             first_job = service.create_job(request, start=False)
             service.run_job(first_job)
             calls.clear()
+            repo.connection.execute("UPDATE kaitori_sources SET posted_at = ''")
+            repo.connection.commit()
 
             second_job = service.create_job(request, start=False)
             service.run_job(second_job)

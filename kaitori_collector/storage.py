@@ -17,6 +17,15 @@ from .normalization import normalize_listing_card_label
 from .seller_risk import build_listing_fingerprint, build_post_family_id, build_seller_identity, detect_text_signals, risk_level
 
 
+def _post_id_from_url(post_url: str) -> str:
+    parsed = urlparse(str(post_url or ""))
+    post_id = parse_qs(parsed.query).get("no", [""])[0]
+    if post_id:
+        return str(post_id)
+    parts = [part for part in parsed.path.split("/") if part]
+    return parts[-1] if parts and parts[-1].isdigit() else ""
+
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS kaitori_sources (
   id TEXT PRIMARY KEY,
@@ -326,6 +335,19 @@ class Repository:
         self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_sources_seller_listing_idx ON kaitori_sources(seller_id, listing_fingerprint, posted_at)")
         self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_rows_source_idx ON kaitori_rows(source_id, id)")
         self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_risk_seller_idx ON kaitori_risk_signals(seller_id, status, id)")
+        self._backfill_source_post_ids()
+
+    def _backfill_source_post_ids(self) -> None:
+        missing = self.connection.execute(
+            "SELECT id, post_url FROM kaitori_sources WHERE (post_id IS NULL OR post_id = '') AND post_url <> ''"
+        ).fetchall()
+        for row in missing:
+            post_id = _post_id_from_url(row["post_url"])
+            if post_id:
+                self.connection.execute(
+                    "UPDATE kaitori_sources SET post_id = ? WHERE id = ? AND (post_id IS NULL OR post_id = '')",
+                    (post_id, row["id"]),
+                )
 
     def close(self) -> None:
         self.connection.close()
@@ -549,11 +571,7 @@ class Repository:
         self.connection.commit()
 
     def find_source_for_post(self, gallery_id: str, post_url: str) -> dict[str, Any] | None:
-        parsed = urlparse(post_url)
-        post_id = parse_qs(parsed.query).get("no", [""])[0]
-        if not post_id:
-            parts = [part for part in parsed.path.split("/") if part]
-            post_id = parts[-1] if parts and parts[-1].isdigit() else ""
+        post_id = _post_id_from_url(post_url)
         row = self.connection.execute(
             """SELECT * FROM kaitori_sources
                WHERE gallery_id = ? AND post_url = ?

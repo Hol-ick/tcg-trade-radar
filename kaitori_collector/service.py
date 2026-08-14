@@ -26,6 +26,15 @@ Fetcher = Callable[[str], str]
 CommentFetcher = Callable[[str, str, str, str, int], str]
 
 
+def _post_identity(post_url: str) -> str:
+    parsed = urlparse(post_url)
+    post_id = parse_qs(parsed.query).get("no", [""])[0]
+    if not post_id:
+        parts = [part for part in parsed.path.split("/") if part]
+        post_id = parts[-1] if parts and parts[-1].isdigit() else ""
+    return f"post:{post_id}" if post_id else f"url:{post_url}"
+
+
 class JobService:
     def __init__(self, repository: Repository, fetcher: Fetcher | None = None, sleep: Callable[[float], None] = time.sleep, catalog: list[Any] | None = None, comment_fetcher: CommentFetcher | None = None) -> None:
         self.repository = repository
@@ -83,11 +92,19 @@ class JobService:
                 self._log(job_id, step="list", message=f"목록 응답 수신 · {len(list_html):,}자", details={"url": list_url, "characters": len(list_html)})
                 parser.feed(list_html)
                 all_rows = parser.list_rows
-                candidates = [
+                raw_candidates = [
                     urljoin(list_url, item["href"])
                     for item in all_rows
                     if normalize_space(item.get("subject", "")) in subjects and item.get("href")
                 ]
+                candidates: list[str] = []
+                candidate_identities: set[str] = set()
+                for candidate_url in raw_candidates:
+                    identity = _post_identity(candidate_url)
+                    if identity in candidate_identities:
+                        continue
+                    candidate_identities.add(identity)
+                    candidates.append(candidate_url)
                 self._log(
                     job_id,
                     step="list",
@@ -114,7 +131,7 @@ class JobService:
                         continue
                     existing_candidate = self.repository.find_source_for_post(request.gallery_id, candidate_url)
                     existing_by_url[candidate_url] = existing_candidate
-                    if existing_candidate and existing_candidate.get("posted_at"):
+                    if existing_candidate:
                         continue
                     pending_fetches[candidate_url] = post_fetch_pool.submit(
                         self._fetch_post_html,
@@ -133,6 +150,16 @@ class JobService:
                         existing_source = existing_by_url[post_url]
                     else:
                         existing_source = self.repository.find_source_for_post(request.gallery_id, post_url)
+                    if existing_source and not existing_source.get("posted_at"):
+                        page_has_in_range_post = True
+                        self.repository.attach_source_to_job(job_id, existing_source["id"])
+                        self._log(
+                            job_id,
+                            step="reuse",
+                            message="기존 게시글·거래 데이터 재사용",
+                            details={"url": post_url, "source_id": existing_source["id"], "posted_at": "", "date_known": False},
+                        )
+                        continue
                     if existing_source and existing_source.get("posted_at"):
                         posted_at = existing_source["posted_at"]
                         if request.since and _is_before_date(posted_at, request.since):
