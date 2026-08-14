@@ -239,11 +239,93 @@ CREATE TABLE IF NOT EXISTS kaitori_demand_snapshots (
   recent_sell_count INTEGER NOT NULL DEFAULT 0,
   recent_buy_count INTEGER NOT NULL DEFAULT 0,
   quality_status TEXT NOT NULL DEFAULT 'needs_review',
+  snapshot_at TEXT NOT NULL DEFAULT '',
+  range_since TEXT NOT NULL DEFAULT '',
+  range_until TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   UNIQUE(snapshot_date, game_id, card_key)
 );
 
 CREATE INDEX IF NOT EXISTS kaitori_snapshot_game_date_idx ON kaitori_demand_snapshots(game_id, snapshot_date);
+
+CREATE TABLE IF NOT EXISTS kaitori_market_observations (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL REFERENCES kaitori_sources(id),
+  row_id TEXT NOT NULL REFERENCES kaitori_rows(id),
+  gallery_id TEXT NOT NULL,
+  card_key TEXT NOT NULL DEFAULT '',
+  card_name_raw TEXT NOT NULL DEFAULT '',
+  card_name_normalized TEXT NOT NULL DEFAULT '',
+  card_code TEXT NOT NULL DEFAULT '',
+  seller_id TEXT,
+  listing_type TEXT NOT NULL DEFAULT 'unknown',
+  quantity INTEGER NOT NULL DEFAULT 1,
+  price_krw_observed INTEGER,
+  price_status TEXT NOT NULL DEFAULT 'unknown',
+  price_scope TEXT NOT NULL DEFAULT 'unknown',
+  price_origin TEXT NOT NULL DEFAULT 'unknown',
+  analysis_status TEXT NOT NULL DEFAULT 'needs_review',
+  review_status TEXT NOT NULL DEFAULT 'needs_review',
+  review_reason TEXT NOT NULL DEFAULT '',
+  card_match_status TEXT NOT NULL DEFAULT 'unmatched',
+  post_status TEXT NOT NULL DEFAULT 'active',
+  source_status TEXT NOT NULL DEFAULT 'active',
+  is_repost INTEGER NOT NULL DEFAULT 0,
+  posted_at TEXT NOT NULL DEFAULT '',
+  event_date TEXT NOT NULL DEFAULT '',
+  observed_at TEXT NOT NULL DEFAULT '',
+  observed_date TEXT NOT NULL DEFAULT '',
+  source_content_hash TEXT NOT NULL DEFAULT '',
+  source_fetched_at TEXT NOT NULL DEFAULT '',
+  normalization_version TEXT NOT NULL DEFAULT 'listing-label-v2',
+  created_at TEXT NOT NULL,
+  UNIQUE(source_id, row_id)
+);
+
+CREATE INDEX IF NOT EXISTS kaitori_market_observation_event_idx
+  ON kaitori_market_observations(gallery_id, card_key, event_date, observed_date);
+CREATE INDEX IF NOT EXISTS kaitori_market_observation_observed_idx
+  ON kaitori_market_observations(gallery_id, card_key, observed_date, listing_type);
+
+CREATE TABLE IF NOT EXISTS kaitori_market_daily (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  gallery_id TEXT NOT NULL,
+  card_key TEXT NOT NULL,
+  card_name_raw TEXT NOT NULL DEFAULT '',
+  event_date TEXT NOT NULL DEFAULT '',
+  observed_date TEXT NOT NULL,
+  supply_listing_count INTEGER NOT NULL DEFAULT 0,
+  demand_listing_count INTEGER NOT NULL DEFAULT 0,
+  trade_listing_count INTEGER NOT NULL DEFAULT 0,
+  supply_post_count INTEGER NOT NULL DEFAULT 0,
+  demand_post_count INTEGER NOT NULL DEFAULT 0,
+  trade_post_count INTEGER NOT NULL DEFAULT 0,
+  supply_quantity INTEGER NOT NULL DEFAULT 0,
+  demand_quantity INTEGER NOT NULL DEFAULT 0,
+  trade_quantity INTEGER NOT NULL DEFAULT 0,
+  supply_price_count INTEGER NOT NULL DEFAULT 0,
+  demand_price_count INTEGER NOT NULL DEFAULT 0,
+  supply_price_median INTEGER,
+  supply_price_min INTEGER,
+  supply_price_max INTEGER,
+  demand_price_median INTEGER,
+  demand_price_min INTEGER,
+  demand_price_max INTEGER,
+  source_count INTEGER NOT NULL DEFAULT 0,
+  seller_count INTEGER NOT NULL DEFAULT 0,
+  matched_listing_count INTEGER NOT NULL DEFAULT 0,
+  candidate_listing_count INTEGER NOT NULL DEFAULT 0,
+  unmatched_listing_count INTEGER NOT NULL DEFAULT 0,
+  review_count INTEGER NOT NULL DEFAULT 0,
+  quality_status TEXT NOT NULL DEFAULT 'needs_review',
+  created_at TEXT NOT NULL,
+  UNIQUE(gallery_id, card_key, event_date, observed_date)
+);
+
+CREATE INDEX IF NOT EXISTS kaitori_market_daily_event_idx
+  ON kaitori_market_daily(gallery_id, card_key, event_date, observed_date);
+CREATE INDEX IF NOT EXISTS kaitori_market_daily_observed_idx
+  ON kaitori_market_daily(gallery_id, card_key, observed_date);
 """
 
 
@@ -303,10 +385,31 @@ class Repository:
             "recent_sell_count": "INTEGER NOT NULL DEFAULT 0",
             "recent_buy_count": "INTEGER NOT NULL DEFAULT 0",
             "quality_status": "TEXT NOT NULL DEFAULT 'needs_review'",
+            "snapshot_at": "TEXT NOT NULL DEFAULT ''",
+            "range_since": "TEXT NOT NULL DEFAULT ''",
+            "range_until": "TEXT NOT NULL DEFAULT ''",
         }
         for column, definition in snapshot_additions.items():
             if column not in snapshot_existing:
                 self.connection.execute(f"ALTER TABLE kaitori_demand_snapshots ADD COLUMN {column} {definition}")
+        observation_existing = {row[1] for row in self.connection.execute("PRAGMA table_info(kaitori_market_observations)").fetchall()}
+        observation_additions = {
+            "review_status": "TEXT NOT NULL DEFAULT 'needs_review'",
+            "review_reason": "TEXT NOT NULL DEFAULT ''",
+            "card_match_status": "TEXT NOT NULL DEFAULT 'unmatched'",
+        }
+        for column, definition in observation_additions.items():
+            if column not in observation_existing:
+                self.connection.execute(f"ALTER TABLE kaitori_market_observations ADD COLUMN {column} {definition}")
+        daily_existing = {row[1] for row in self.connection.execute("PRAGMA table_info(kaitori_market_daily)").fetchall()}
+        daily_additions = {
+            "matched_listing_count": "INTEGER NOT NULL DEFAULT 0",
+            "candidate_listing_count": "INTEGER NOT NULL DEFAULT 0",
+            "unmatched_listing_count": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for column, definition in daily_additions.items():
+            if column not in daily_existing:
+                self.connection.execute(f"ALTER TABLE kaitori_market_daily ADD COLUMN {column} {definition}")
         source_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(kaitori_sources)").fetchall()}
         if "source_status" not in source_columns:
             self.connection.execute("ALTER TABLE kaitori_sources ADD COLUMN source_status TEXT NOT NULL DEFAULT 'active'")
@@ -727,7 +830,228 @@ class Repository:
                 row_count += 1
             source_count += 1
         self.connection.commit()
+        self.refresh_market_observations()
+        self.refresh_market_daily()
         return {"sources": source_count, "rows": row_count}
+
+    def refresh_market_observations(self, *, source_id: str | None = None) -> int:
+        """Materialize one normalized market observation per source-version row.
+
+        ``posted_at`` is the listing event time. ``observed_at`` is the source
+        fetch time, falling back to the row insertion time for legacy data.
+        The row/source version identity is preserved by ``(source_id, row_id)``.
+        """
+        return self._materialize_market_observations(source_id=source_id)
+
+    def _materialize_market_observations(self, *, source_id: str | None = None) -> int:
+        query = """
+            SELECT r.*, s.gallery_id, s.seller_id, s.posted_at, s.fetched_at,
+                   s.content_hash AS source_content_hash, s.source_status,
+                   s.post_status AS source_post_status, s.is_repost
+            FROM kaitori_rows r
+            JOIN kaitori_sources s ON s.id = r.source_id
+        """
+        values: list[Any] = []
+        if source_id:
+            query += " WHERE r.source_id = ?"
+            values.append(source_id)
+        query += " ORDER BY r.id"
+        rows = self.connection.execute(query, values).fetchall()
+        now = utc_now()
+        for row in rows:
+            item = dict(row)
+            posted_at = str(item.get("posted_at") or "")
+            source_fetched_at = str(item.get("fetched_at") or "")
+            observed_at = source_fetched_at or str(item.get("created_at") or "")
+            card_code = str(item.get("card_code") or "").strip().upper().replace("_", "-")
+            card_name = str(item.get("card_name_raw") or "")
+            normalized_name = normalize_listing_card_label(card_name, str(item.get("listing_type") or ""))
+            card_key = card_code or normalized_name
+            self.connection.execute(
+                """INSERT INTO kaitori_market_observations
+                (id, source_id, row_id, gallery_id, card_key, card_name_raw, card_name_normalized,
+                 card_code, seller_id, listing_type, quantity, price_krw_observed, price_status,
+                 price_scope, price_origin, analysis_status, review_status, review_reason,
+                 card_match_status, post_status, source_status, is_repost,
+                 posted_at, event_date, observed_at, observed_date, source_content_hash,
+                 source_fetched_at, normalization_version, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  source_id = excluded.source_id, row_id = excluded.row_id,
+                  gallery_id = excluded.gallery_id, card_key = excluded.card_key,
+                  card_name_raw = excluded.card_name_raw,
+                  card_name_normalized = excluded.card_name_normalized,
+                  card_code = excluded.card_code, seller_id = excluded.seller_id,
+                  listing_type = excluded.listing_type, quantity = excluded.quantity,
+                  price_krw_observed = excluded.price_krw_observed,
+                  price_status = excluded.price_status, price_scope = excluded.price_scope,
+                  price_origin = excluded.price_origin, analysis_status = excluded.analysis_status,
+                  review_status = excluded.review_status, review_reason = excluded.review_reason,
+                  card_match_status = excluded.card_match_status,
+                  post_status = excluded.post_status, source_status = excluded.source_status,
+                  is_repost = excluded.is_repost, posted_at = excluded.posted_at,
+                  event_date = excluded.event_date, observed_at = excluded.observed_at,
+                  observed_date = excluded.observed_date,
+                  source_content_hash = excluded.source_content_hash,
+                  source_fetched_at = excluded.source_fetched_at,
+                  normalization_version = excluded.normalization_version""",
+                (
+                    str(item["id"]), str(item["source_id"]), str(item["id"]), str(item.get("gallery_id") or ""),
+                    card_key, card_name, normalized_name, card_code, item.get("seller_id"),
+                    str(item.get("listing_type") or "unknown"), max(1, int(item.get("quantity") or 1)),
+                    item.get("price_krw_observed"), str(item.get("price_status") or "unknown"),
+                    str(item.get("price_scope") or "unknown"), str(item.get("price_origin") or "unknown"),
+                    str(item.get("analysis_status") or "needs_review"), str(item.get("status") or "needs_review"),
+                    str(item.get("review_reason") or ""), str(item.get("card_match_status") or "unmatched"),
+                    str(item.get("post_status") or item.get("source_post_status") or "active"),
+                    str(item.get("source_status") or "active"), int(item.get("is_repost") or 0), posted_at,
+                    _date_text(posted_at), observed_at, _date_text(observed_at), str(item.get("source_content_hash") or ""),
+                    source_fetched_at, "listing-label-v2", now,
+                ),
+            )
+        self.connection.commit()
+        return len(rows)
+
+    def refresh_market_daily(self) -> int:
+        """Rebuild event-day/observation-day aggregates used by future graphs."""
+        from collections import defaultdict
+
+        grouped: dict[tuple[str, str, str, str], dict[str, Any]] = defaultdict(
+            lambda: {
+                "card_name_raw": "", "supply": 0, "demand": 0, "trade": 0,
+                "supply_posts": set(), "demand_posts": set(), "trade_posts": set(),
+                "supply_quantity": 0, "demand_quantity": 0, "trade_quantity": 0,
+                "supply_prices": [], "demand_prices": [], "sources": set(), "sellers": set(),
+                "matched": 0, "candidate": 0, "unmatched": 0, "review_count": 0,
+            }
+        )
+        observations = self.connection.execute(
+            """SELECT * FROM kaitori_market_observations
+               WHERE card_key <> '' AND observed_date <> ''
+               ORDER BY id"""
+        ).fetchall()
+        for observation in observations:
+            item = dict(observation)
+            if item.get("post_status") != "active" or item.get("analysis_status") in {"context_only", "excluded"}:
+                continue
+            listing_type = str(item.get("listing_type") or "unknown")
+            if listing_type not in {"sell", "buy", "trade"}:
+                continue
+            key = (str(item.get("gallery_id") or ""), str(item["card_key"]), str(item.get("event_date") or ""), str(item["observed_date"]))
+            bucket = grouped[key]
+            bucket["card_name_raw"] = bucket["card_name_raw"] or str(item.get("card_name_raw") or item["card_key"])
+            bucket["sources"].add(str(item["source_id"]))
+            if item.get("seller_id"):
+                bucket["sellers"].add(str(item["seller_id"]))
+            if item.get("analysis_status") == "needs_review":
+                bucket["review_count"] += 1
+            match_status = str(item.get("card_match_status") or "unmatched")
+            if match_status == "matched":
+                bucket["matched"] += 1
+            elif match_status == "candidate":
+                bucket["candidate"] += 1
+            else:
+                bucket["unmatched"] += 1
+            quantity = max(1, int(item.get("quantity") or 1))
+            price = item.get("price_krw_observed")
+            price_usable = (
+                item.get("analysis_status") == "usable"
+                and item.get("price_scope") == "per_card"
+                and item.get("price_status") in {"exact", "estimated"}
+                and price not in (None, 0, "")
+            )
+            if listing_type == "sell":
+                bucket["supply"] += 1
+                bucket["supply_posts"].add(str(item["source_id"]))
+                bucket["supply_quantity"] += quantity
+                if price_usable:
+                    bucket["supply_prices"].append(int(price))
+            elif listing_type == "buy":
+                bucket["demand"] += 1
+                bucket["demand_posts"].add(str(item["source_id"]))
+                bucket["demand_quantity"] += quantity
+                if price_usable:
+                    bucket["demand_prices"].append(int(price))
+            else:
+                bucket["trade"] += 1
+                bucket["trade_posts"].add(str(item["source_id"]))
+                bucket["trade_quantity"] += quantity
+
+        self.connection.execute("DELETE FROM kaitori_market_daily")
+        now = utc_now()
+        for (gallery_id, card_key, event_date, observed_date), bucket in grouped.items():
+            supply_prices = bucket["supply_prices"]
+            demand_prices = bucket["demand_prices"]
+            quality_status = "needs_review" if bucket["review_count"] else "observed"
+            if quality_status == "observed" and len(bucket["sources"]) < 2:
+                quality_status = "low_sample"
+            self.connection.execute(
+                """INSERT INTO kaitori_market_daily
+                (gallery_id, card_key, card_name_raw, event_date, observed_date,
+                 supply_listing_count, demand_listing_count, trade_listing_count,
+                 supply_post_count, demand_post_count, trade_post_count,
+                 supply_quantity, demand_quantity, trade_quantity,
+                 supply_price_count, demand_price_count,
+                 supply_price_median, supply_price_min, supply_price_max,
+                 demand_price_median, demand_price_min, demand_price_max,
+                 source_count, seller_count, matched_listing_count, candidate_listing_count,
+                 unmatched_listing_count, review_count, quality_status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    gallery_id, card_key, bucket["card_name_raw"], event_date, observed_date,
+                    bucket["supply"], bucket["demand"], bucket["trade"],
+                    len(bucket["supply_posts"]), len(bucket["demand_posts"]), len(bucket["trade_posts"]),
+                    bucket["supply_quantity"], bucket["demand_quantity"], bucket["trade_quantity"],
+                    len(supply_prices), len(demand_prices), _median(supply_prices),
+                    min(supply_prices) if supply_prices else None, max(supply_prices) if supply_prices else None,
+                    _median(demand_prices), min(demand_prices) if demand_prices else None,
+                    max(demand_prices) if demand_prices else None, len(bucket["sources"]), len(bucket["sellers"]),
+                    bucket["matched"], bucket["candidate"], bucket["unmatched"], bucket["review_count"], quality_status, now,
+                ),
+            )
+        self.connection.commit()
+        return len(grouped)
+
+    def refresh_market_history(self) -> dict[str, int]:
+        """Refresh normalized observations and their graph-ready daily aggregates."""
+        observation_count = self.refresh_market_observations()
+        daily_count = self.refresh_market_daily()
+        return {"observations": observation_count, "daily_rows": daily_count}
+
+    def list_market_daily(
+        self,
+        *,
+        game_id: str = "",
+        card_key: str = "",
+        since: str | None = None,
+        until: str | None = None,
+        observed_since: str | None = None,
+        observed_until: str | None = None,
+        limit: int = 5000,
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM kaitori_market_daily WHERE 1=1"
+        values: list[Any] = []
+        if game_id:
+            query += " AND gallery_id = ?"
+            values.append(game_id)
+        if card_key:
+            query += " AND card_key = ?"
+            values.append(card_key)
+        if since:
+            query += " AND (event_date = '' OR event_date >= ?)"
+            values.append(since[:10])
+        if until:
+            query += " AND (event_date = '' OR event_date <= ?)"
+            values.append(until[:10])
+        if observed_since:
+            query += " AND observed_date >= ?"
+            values.append(observed_since[:10])
+        if observed_until:
+            query += " AND observed_date <= ?"
+            values.append(observed_until[:10])
+        query += " ORDER BY observed_date, event_date, card_key LIMIT ?"
+        values.append(max(1, min(int(limit), 10000)))
+        return [dict(row) for row in self.connection.execute(query, values).fetchall()]
 
     def analyze_source_risk(self, source_id: str) -> dict[str, Any]:
         """Link a source to a seller and rebuild its deterministic review signals."""
@@ -818,6 +1142,7 @@ class Repository:
                completed_post_count = ?, repost_count = ?, risk_score = ?, risk_level = ?, updated_at = ? WHERE seller_id = ?""",
             (int(stats["posts"] or 0), int(listing_stats["sells"] or 0), int(listing_stats["buys"] or 0), int(stats["completed"] or 0), int(stats["reposts"] or 0), min(100, int(score)), risk_level(int(score)), now, identity.seller_id),
         )
+        self._materialize_market_observations(source_id=source_id)
         self.connection.commit()
         seller = self.get_seller(identity.seller_id)
         assert seller is not None
@@ -1039,12 +1364,14 @@ class Repository:
                 (snapshot_date, game_id, card_key, card_name_raw, sell_count, buy_count, trade_count,
                  sell_price_median, sell_price_min, sell_price_max, wanted_price_median,
                 active_source_count, demand_score, demand_ratio, sell_post_count, buy_post_count,
-                sell_quantity, buy_quantity, recent_sell_count, recent_buy_count, quality_status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                sell_quantity, buy_quantity, recent_sell_count, recent_buy_count, quality_status,
+                snapshot_at, range_since, range_until, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (snapshot_date, game_id, summary["card_key"], summary["card_name_raw"], summary["sell_count"], summary["buy_count"], summary["trade_count"],
                  summary["sell_price_median"], summary["sell_price_min"], summary["sell_price_max"], summary["wanted_price_median"],
                  summary["active_source_count"], summary["demand_score"], summary["demand_ratio"], summary["sell_post_count"], summary["buy_post_count"],
-                 summary["sell_quantity"], summary["buy_quantity"], summary["recent_sell_count"], summary["recent_buy_count"], summary["quality_status"], utc_now()),
+                 summary["sell_quantity"], summary["buy_quantity"], summary["recent_sell_count"], summary["recent_buy_count"], summary["quality_status"],
+                 utc_now(), str(since or ""), str(until or ""), utc_now()),
             )
         self.connection.commit()
         return len(summaries)
@@ -1100,6 +1427,7 @@ class Repository:
                WHERE id = ?""",
             (*updates.values(), row_id),
         )
+        self._materialize_market_observations(source_id=current["source_id"])
         self.connection.commit()
         updated = self.get_row(row_id)
         assert updated is not None
@@ -1142,6 +1470,7 @@ class Repository:
                review_reason = CASE WHEN ? = 'needs_review' THEN ? ELSE review_reason END, updated_at = ? WHERE id = ?""",
             (result.card_code, next_status, next_match_status, next_analysis_status, result.status, result.reason, now, row_id),
         )
+        self._materialize_market_observations(source_id=current["source_id"])
         self.connection.commit()
         updated = self.get_row(row_id)
         assert updated is not None
@@ -1266,6 +1595,11 @@ def _as_date(value: Any) -> date | None:
             return date.fromisoformat(text[:10])
         except ValueError:
             return None
+
+
+def _date_text(value: Any) -> str:
+    parsed = _as_date(value)
+    return parsed.isoformat() if parsed else ""
 
 
 def _recentness_weight(value: Any, reference_day: date) -> float:

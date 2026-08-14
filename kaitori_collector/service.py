@@ -264,6 +264,8 @@ class JobService:
                 completed_at[:10], request.gallery_id, since=request.since, until=request.until
             )
             self._log(job_id, step="snapshot", message=f"카드 수요 스냅샷 갱신 · {snapshot_count}개", details={"game_id": request.gallery_id, "count": snapshot_count})
+            daily_count = self.repository.refresh_market_daily()
+            self._log(job_id, step="market_history", message=f"시장 시계열 집계 갱신 · {daily_count}개", details={"game_id": request.gallery_id, "daily_rows": daily_count})
             status = self.get_job_status(job_id)
             self._log(job_id, step="done", message=f"작업 완료 · 게시글 {posts_seen}개 / 결과 {status['counts']['rows']}개", details={"counts": status["counts"]})
         except Exception as exc:
