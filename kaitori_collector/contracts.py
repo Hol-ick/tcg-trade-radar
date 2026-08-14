@@ -76,6 +76,7 @@ class JobRequest:
     max_posts: int = 20
     max_pages: int = 1
     delay: float = 1.0
+    fetch_concurrency: int = 4
     max_retries: int = 2
     buy_rate: int = 60
     keep_raw: bool = True
@@ -99,6 +100,7 @@ class JobRequest:
             max_posts=_as_int(payload.get("max_posts"), 20),
             max_pages=_as_int(payload.get("max_pages", payload.get("pages")), 1),
             delay=_as_float(payload.get("delay", payload.get("delay_seconds")), 1.0),
+            fetch_concurrency=_as_int(payload.get("fetch_concurrency"), 4),
             max_retries=_as_int(payload.get("max_retries"), 2),
             buy_rate=_as_int(payload.get("buy_rate"), 60),
             keep_raw=_as_bool(payload.get("keep_raw"), True),
@@ -125,6 +127,8 @@ class JobRequest:
             raise ValueError("max_pages must be between 1 and 5000")
         if self.delay < 0:
             raise ValueError("delay must be zero or greater")
+        if not 1 <= self.fetch_concurrency <= 8:
+            raise ValueError("fetch_concurrency must be between 1 and 8")
         if not 0 <= self.max_retries <= 3:
             raise ValueError("max_retries must be between 0 and 3")
         if not 0 <= self.buy_rate <= 100:

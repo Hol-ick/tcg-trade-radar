@@ -1,4 +1,6 @@
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -139,6 +141,53 @@ class JobServiceTests(unittest.TestCase):
             self.assertTrue(any("lists" in url for url in calls))
             self.assertFalse(any("lists" not in url for url in calls))
             self.assertEqual(service.get_job_status(second_job)["counts"]["rows"], 1)
+            repo.close()
+
+    def test_post_fetches_are_bounded_and_concurrent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            list_html = "<table>" + "".join(
+                f'<tr><td class="gall_subject">판매</td><td><a class="gall_tit" href="/mgallery/board/view/?id=tcggame&amp;no={number}">글</a></td></tr>'
+                for number in range(1, 5)
+            ) + "</table>"
+            lock = threading.Lock()
+            active = 0
+            peak = 0
+
+            def fetcher(url: str) -> str:
+                nonlocal active, peak
+                if "lists" in url:
+                    return list_html
+                with lock:
+                    active += 1
+                    peak = max(peak, active)
+                time.sleep(0.05)
+                with lock:
+                    active -= 1
+                return POST_HTML
+
+            service = JobService(
+                repo,
+                fetcher=fetcher,
+                comment_fetcher=lambda *_args: "",
+                sleep=lambda _: None,
+            )
+            job_id = service.create_job(
+                JobRequest(
+                    gallery_id="tcggame",
+                    max_posts=4,
+                    max_pages=1,
+                    delay=0,
+                    fetch_concurrency=3,
+                ),
+                start=False,
+            )
+
+            status = service.run_job(job_id)
+
+            self.assertEqual(status["state"], "completed")
+            self.assertGreaterEqual(peak, 2)
+            self.assertLessEqual(peak, 3)
             repo.close()
 
     def test_failed_job_can_be_retried_and_existing_rows_are_kept(self):

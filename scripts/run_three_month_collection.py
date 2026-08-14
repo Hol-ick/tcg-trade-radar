@@ -50,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db", type=Path, default=ROOT / ".audit" / "kaitori.sqlite3")
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--delay", type=float, default=0.25)
+    parser.add_argument("--fetch-concurrency", type=int, default=4)
     parser.add_argument("--max-posts", type=int, default=200_000)
     parser.add_argument("--max-pages", type=int, default=20_000)
     parser.add_argument("--game-id", action="append", choices=[game["id"] for game in GAMES])
@@ -103,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_posts=args.max_posts,
                 max_pages=args.max_pages,
                 delay=args.delay,
+                fetch_concurrency=args.fetch_concurrency,
                 max_retries=5,
                 buy_rate=60,
                 keep_raw=True,

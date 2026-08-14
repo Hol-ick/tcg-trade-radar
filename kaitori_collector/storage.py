@@ -340,7 +340,7 @@ class Repository:
                 json.dumps(_empty_counts()),
                 now,
                 __version__,
-                json.dumps({"gallery_url": request.gallery_url, "max_posts": request.max_posts, "max_pages": request.max_pages, "delay": request.delay, "max_retries": request.max_retries, "keep_raw": request.keep_raw, "review_unmatched": request.review_unmatched, "subjects": list(request.subjects), "cutoff_at": request.cutoff_at}, ensure_ascii=False),
+                json.dumps({"gallery_url": request.gallery_url, "max_posts": request.max_posts, "max_pages": request.max_pages, "delay": request.delay, "fetch_concurrency": request.fetch_concurrency, "max_retries": request.max_retries, "keep_raw": request.keep_raw, "review_unmatched": request.review_unmatched, "subjects": list(request.subjects), "cutoff_at": request.cutoff_at}, ensure_ascii=False),
             ),
         )
         self.connection.commit()

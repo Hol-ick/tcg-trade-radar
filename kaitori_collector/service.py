@@ -6,6 +6,7 @@ import io
 import json
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, datetime
 from typing import Callable, Any
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -58,12 +59,17 @@ class JobService:
                 "subjects": subjects,
                 "max_posts": request.max_posts,
                 "max_pages": request.max_pages,
+                "fetch_concurrency": request.fetch_concurrency,
                 "max_retries": request.max_retries,
                 "cutoff_at": request.cutoff_at,
             },
         )
         seen_urls: set[str] = set()
         posts_seen = 0
+        post_fetch_pool = ThreadPoolExecutor(
+            max_workers=request.fetch_concurrency,
+            thread_name_prefix=f"kaitori-fetch-{request.gallery_id}",
+        )
         try:
             for page in range(1, request.max_pages + 1):
                 page_has_in_range_post = False
@@ -100,6 +106,22 @@ class JobService:
                         raise RuntimeError(f"목록 응답을 사용할 수 없습니다: {profile.reason}")
                 elif not candidates:
                     self._log(job_id, step="list", message=f"{', '.join(subjects)} 말머리 글이 없음", details={"page": page})
+                pending_fetches: dict[str, Future[str]] = {}
+                remaining_slots = request.max_posts - posts_seen
+                for candidate_url in candidates:
+                    if candidate_url in seen_urls or remaining_slots <= 0:
+                        continue
+                    existing_candidate = self.repository.find_source_for_post(request.gallery_id, candidate_url)
+                    if existing_candidate and existing_candidate.get("posted_at"):
+                        continue
+                    pending_fetches[candidate_url] = post_fetch_pool.submit(
+                        self._fetch_post_html,
+                        job_id,
+                        candidate_url,
+                        request,
+                    )
+                    remaining_slots -= 1
+
                 for post_url in candidates:
                     if post_url in seen_urls or posts_seen >= request.max_posts:
                         continue
@@ -128,7 +150,7 @@ class JobService:
                             )
                         continue
                     self._log(job_id, step="post", message=f"게시글 요청 시작 · {posts_seen}/{request.max_posts}", details={"url": post_url})
-                    post_html = self._fetch_with_retry(job_id, post_url, request, "post")
+                    post_html = pending_fetches.pop(post_url).result()
                     post_profile = inspect_source_response(post_html, post_url, expected="post")
                     self._log(job_id, step="post", message=f"게시글 응답 판별 · {post_profile.state}", details=post_profile.as_dict())
                     if post_profile.state in {"empty", "blocked"}:
@@ -192,8 +214,6 @@ class JobService:
                         for row in self.repository.list_rows(job_id=job_id):
                             if row["source_id"] == source_id:
                                 self.repository.apply_match(row["id"], match_card(row["card_name_raw"], row["rarity"], self.catalog))
-                    if request.delay > 0:
-                        self.sleep(request.delay)
                 if request.since and page_has_older_post and not page_has_in_range_post:
                     self._log(
                         job_id,
@@ -206,6 +226,7 @@ class JobService:
                     break
                 if request.delay > 0:
                     self.sleep(request.delay)
+            post_fetch_pool.shutdown(wait=True)
             completed_at = utc_now()
             self.repository.update_job(job_id, state="completed", error_message="", finished_at=completed_at, last_success_at=completed_at)
             snapshot_count = self.repository.refresh_demand_snapshot(
@@ -215,6 +236,7 @@ class JobService:
             status = self.get_job_status(job_id)
             self._log(job_id, step="done", message=f"작업 완료 · 게시글 {posts_seen}개 / 결과 {status['counts']['rows']}개", details={"counts": status["counts"]})
         except Exception as exc:
+            post_fetch_pool.shutdown(wait=True)
             error_message = f"{type(exc).__name__}: {exc}"[:500]
             self._log(job_id, level="error", step="error", message="작업 실패", details={"error": error_message})
             self.repository.update_job(job_id, state="failed", error_message=error_message, finished_at=utc_now())
@@ -359,6 +381,12 @@ class JobService:
         details: dict[str, Any] | None = None,
     ) -> None:
         self.repository.add_job_log(job_id, level=level, step=step, message=message, details=details)
+
+    def _fetch_post_html(self, job_id: str, post_url: str, request: JobRequest) -> str:
+        """Fetch one post in a bounded pool while retaining the configured pacing."""
+        if request.delay > 0:
+            self.sleep(request.delay)
+        return self._fetch_with_retry(job_id, post_url, request, "post")
 
     def _fetch_with_retry(self, job_id: str, url: str, request: JobRequest, step: str) -> str:
         for attempt in range(request.max_retries + 1):
