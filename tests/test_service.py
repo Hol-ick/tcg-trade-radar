@@ -96,6 +96,28 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(results[0]["buy_price_krw"], 21000)
             repo.close()
 
+    def test_cutoff_at_excludes_posts_after_watermark_after_job_reload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            service = JobService(repo, fetcher=lambda url: LIST_HTML if "lists" in url else POST_HTML)
+            job_id = service.create_job(
+                JobRequest(
+                    gallery_id="tcggame",
+                    cutoff_at="2026-08-12T09:00:00+09:00",
+                    max_posts=2,
+                    max_pages=1,
+                    delay=0,
+                ),
+                start=False,
+            )
+
+            status = service.run_job(job_id)
+
+            self.assertEqual(status["state"], "completed")
+            self.assertEqual(status["counts"]["sources"], 0)
+            self.assertEqual(status["counts"]["rows"], 0)
+            repo.close()
+
     def test_failed_job_can_be_retried_and_existing_rows_are_kept(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "kaitori.sqlite3")

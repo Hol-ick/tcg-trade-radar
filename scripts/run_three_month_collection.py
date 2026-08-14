@@ -26,6 +26,11 @@ GAMES: tuple[dict[str, Any], ...] = (
     {"name": "뱅가드", "id": "vg", "subject": "거래"},
 )
 SUBJECTS = ("판매", "구매", "거래", "🔁거래")
+WATERMARK_PATH = ROOT / "config" / "collection_watermark.json"
+
+
+def load_watermark() -> dict[str, str]:
+    return json.loads(WATERMARK_PATH.read_text(encoding="utf-8"))
 
 
 def subtract_months(value: date, months: int) -> date:
@@ -36,10 +41,11 @@ def subtract_months(value: date, months: int) -> date:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    today = date.today()
+    watermark = load_watermark()
     parser = argparse.ArgumentParser(description="Run a complete three-month multi-game DCInside backfill")
-    parser.add_argument("--since", default=subtract_months(today, 3).isoformat())
-    parser.add_argument("--until", default=today.isoformat())
+    parser.add_argument("--since", default=watermark["since"])
+    parser.add_argument("--until", default=watermark["until"])
+    parser.add_argument("--cutoff-at", default=watermark["cutoff_at"])
     parser.add_argument("--db", type=Path, default=ROOT / ".audit" / "kaitori.sqlite3")
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--delay", type=float, default=0.25)
@@ -58,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     service = JobService(repository)
     summary: list[dict[str, Any]] = []
     try:
-        print(json.dumps({"event": "collection_start", "since": args.since, "until": args.until, "games": [game["id"] for game in selected]}, ensure_ascii=False), flush=True)
+        print(json.dumps({"event": "collection_start", "since": args.since, "until": args.until, "cutoff_at": args.cutoff_at, "games": [game["id"] for game in selected]}, ensure_ascii=False), flush=True)
         for game in selected:
             request = JobRequest(
                 gallery_id=game["id"],
@@ -67,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
                 subjects=SUBJECTS,
                 since=args.since,
                 until=args.until,
+                cutoff_at=args.cutoff_at,
                 max_posts=args.max_posts,
                 max_pages=args.max_pages,
                 delay=args.delay,
@@ -97,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     manifest = {
         "since": args.since,
         "until": args.until,
+        "cutoff_at": args.cutoff_at,
+        "watermark_path": str(WATERMARK_PATH),
         "games": summary,
     }
     manifest_path = args.manifest or ROOT / ".audit" / f"three-month-collection-{args.since}-{args.until}.json"

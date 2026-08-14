@@ -6,7 +6,7 @@ import io
 import json
 import threading
 import time
-from datetime import date
+from datetime import date, datetime
 from typing import Callable, Any
 from urllib.parse import parse_qs, urljoin, urlparse
 
@@ -59,6 +59,7 @@ class JobService:
                 "max_posts": request.max_posts,
                 "max_pages": request.max_pages,
                 "max_retries": request.max_retries,
+                "cutoff_at": request.cutoff_at,
             },
         )
         seen_urls: set[str] = set()
@@ -116,7 +117,7 @@ class JobService:
                     posted_at = document.get("posted_at", "")
                     if request.since and _is_before_date(posted_at, request.since):
                         page_has_older_post = True
-                    if _date_in_range(posted_at, request.since, request.until):
+                    if _date_in_range(posted_at, request.since, request.until, request.cutoff_at):
                         page_has_in_range_post = True
                     post_quality = classify_post(
                         document.get("title", ""),
@@ -141,7 +142,7 @@ class JobService:
                             message=f"결과 0개 · {reason}",
                             details={"url": post_url, "body_characters": body_chars, "images": image_count},
                         )
-                    if not _date_in_range(document.get("posted_at", ""), request.since, request.until):
+                    if not _date_in_range(document.get("posted_at", ""), request.since, request.until, request.cutoff_at):
                         self._log(job_id, level="warning", step="parse", message="작성일 범위 밖이라 제외", details={"url": post_url, "posted_at": document.get("posted_at", "")})
                         continue
                     source_id, _ = self.repository.upsert_source({
@@ -429,12 +430,15 @@ def _request_from_job(job: dict[str, Any]) -> JobRequest:
         "subjects": config.get("subjects") or [],
         "since": job["since"],
         "until": job["until"],
+        "cutoff_at": config.get("cutoff_at"),
         "buy_rate": job["buy_rate"],
         **config,
     })
 
 
-def _date_in_range(value: str, since: str | None, until: str | None) -> bool:
+def _date_in_range(value: str, since: str | None, until: str | None, cutoff_at: str | None = None) -> bool:
+    if cutoff_at and not _at_or_before_cutoff(value, cutoff_at):
+        return False
     if not value:
         return True
     value_date = value[:10]
@@ -447,6 +451,21 @@ def _date_in_range(value: str, since: str | None, until: str | None) -> bool:
     if until and current > date.fromisoformat(until[:10]):
         return False
     return True
+
+
+def _at_or_before_cutoff(value: str, cutoff_at: str) -> bool:
+    if not value or not cutoff_at:
+        return False
+    try:
+        cutoff = datetime.fromisoformat(cutoff_at.replace("Z", "+00:00"))
+        posted = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if cutoff.tzinfo is None:
+        return False
+    if posted.tzinfo is None:
+        posted = posted.replace(tzinfo=cutoff.tzinfo)
+    return posted <= cutoff
 
 
 def _is_before_date(value: str, boundary: str) -> bool:

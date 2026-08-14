@@ -72,6 +72,7 @@ class JobRequest:
     subjects: tuple[str, ...] = ()
     since: str | None = None
     until: str | None = None
+    cutoff_at: str | None = None
     max_posts: int = 20
     max_pages: int = 1
     delay: float = 1.0
@@ -94,6 +95,7 @@ class JobRequest:
             subjects=_as_subjects(payload.get("subjects")),
             since=_optional_text(payload.get("since")),
             until=_optional_text(payload.get("until")),
+            cutoff_at=_optional_text(payload.get("cutoff_at")),
             max_posts=_as_int(payload.get("max_posts"), 20),
             max_pages=_as_int(payload.get("max_pages", payload.get("pages")), 1),
             delay=_as_float(payload.get("delay", payload.get("delay_seconds")), 1.0),
@@ -108,6 +110,13 @@ class JobRequest:
     def validate(self) -> None:
         if not self.gallery_id:
             raise ValueError("gallery_id is required")
+        if self.cutoff_at:
+            try:
+                cutoff = datetime.fromisoformat(self.cutoff_at.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("cutoff_at must be an ISO-8601 timestamp") from exc
+            if cutoff.tzinfo is None:
+                raise ValueError("cutoff_at must include a timezone offset")
         if any(not subject.strip() for subject in self.subjects):
             raise ValueError("subjects must contain non-empty strings")
         if not 1 <= self.max_posts <= 20_000:

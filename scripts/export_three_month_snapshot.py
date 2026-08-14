@@ -18,6 +18,7 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_GAMES = ("tcggame", "onepiececardgame", "pokemoncardgame", "digimontcg", "vg")
+WATERMARK_PATH = ROOT / "config" / "collection_watermark.json"
 
 POST_FIELDS = (
     "job_id",
@@ -134,7 +135,7 @@ def _write_jsonl(path: Path, fields: tuple[str, ...], rows: list[dict[str, Any]]
             handle.write("\n")
 
 
-def export_snapshot(db_path: Path, output_root: Path, since: str, until: str, job_ids: list[str]) -> dict[str, Any]:
+def export_snapshot(db_path: Path, output_root: Path, since: str, until: str, cutoff_at: str, job_ids: list[str]) -> dict[str, Any]:
     output = output_root / f"{since}_{until}"
     output.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path)
@@ -156,10 +157,10 @@ def export_snapshot(db_path: Path, output_root: Path, since: str, until: str, jo
                    s.listing_fingerprint, s.repost_of_source_id, s.is_repost
             FROM kaitori_job_sources js
             JOIN kaitori_sources s ON s.id = js.source_id
-            WHERE js.job_id IN ({marks})
+            WHERE js.job_id IN ({marks}) AND s.posted_at <> '' AND s.posted_at <= ?
             ORDER BY s.gallery_id, s.posted_at, s.post_id
             """,
-            selected_ids,
+            (*selected_ids, cutoff_at),
         )
         listings = _rows(
             connection,
@@ -176,10 +177,10 @@ def export_snapshot(db_path: Path, output_root: Path, since: str, until: str, jo
             FROM kaitori_job_rows jr
             JOIN kaitori_rows r ON r.id = jr.row_id
             JOIN kaitori_sources s ON s.id = r.source_id
-            WHERE jr.job_id IN ({marks})
+            WHERE jr.job_id IN ({marks}) AND s.posted_at <> '' AND s.posted_at <= ?
             ORDER BY s.gallery_id, s.posted_at, r.id
             """,
-            selected_ids,
+            (*selected_ids, cutoff_at),
         )
         comments = _rows(
             connection,
@@ -189,10 +190,11 @@ def export_snapshot(db_path: Path, output_root: Path, since: str, until: str, jo
                    c.posted_at, c.created_at
             FROM kaitori_comments c
             JOIN kaitori_job_sources js ON js.source_id = c.source_id
-            WHERE js.job_id IN ({marks})
+            JOIN kaitori_sources s ON s.id = c.source_id
+            WHERE js.job_id IN ({marks}) AND s.posted_at <> '' AND s.posted_at <= ?
             ORDER BY c.gallery_id, c.posted_at, c.comment_id
             """,
-            selected_ids,
+            (*selected_ids, cutoff_at),
         )
         logs = _rows(
             connection,
@@ -202,6 +204,7 @@ def export_snapshot(db_path: Path, output_root: Path, since: str, until: str, jo
         job_summaries: list[dict[str, Any]] = []
         for job in jobs:
             job_id = job["id"]
+            job_posts = [row for row in posts if row["job_id"] == job_id and row.get("posted_at")]
             job_summaries.append(
                 {
                     "id": job_id,
@@ -213,13 +216,16 @@ def export_snapshot(db_path: Path, output_root: Path, since: str, until: str, jo
                     "created_at": job["created_at"],
                     "finished_at": job["finished_at"],
                     "error_message": job["error_message"],
-                    "source_count": sum(row["job_id"] == job_id for row in posts),
+                    "source_count": len(job_posts),
                     "listing_count": sum(row["job_id"] == job_id for row in listings),
                     "comment_count": sum(row["job_id"] == job_id for row in comments),
                     "log_count": sum(row["job_id"] == job_id for row in logs),
+                    "min_posted_at": min((row["posted_at"] for row in job_posts), default=None),
+                    "max_posted_at": max((row["posted_at"] for row in job_posts), default=None),
                 }
             )
         generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        posted_values = [row["posted_at"] for row in posts if row.get("posted_at")]
         files = {
             "posts": "posts.csv",
             "listings": "listings.csv",
@@ -236,6 +242,9 @@ def export_snapshot(db_path: Path, output_root: Path, since: str, until: str, jo
             "generated_at": generated_at,
             "since": since,
             "until": until,
+            "cutoff_at": cutoff_at,
+            "data_min_posted_at": min(posted_values, default=None),
+            "data_max_posted_at": max(posted_values, default=None),
             "collection_state": "complete" if all(job["state"] == "completed" for job in jobs) else "in_progress_or_partial",
             "raw_html_included": False,
             "raw_html_note": "원문 HTML은 로컬 감사용 SQLite에 보존하며, 공개 데이터셋에는 구조화된 필드만 포함합니다.",
@@ -250,11 +259,13 @@ def export_snapshot(db_path: Path, output_root: Path, since: str, until: str, jo
 
 
 def build_parser() -> argparse.ArgumentParser:
+    watermark = json.loads(WATERMARK_PATH.read_text(encoding="utf-8"))
     parser = argparse.ArgumentParser(description="Export a compact three-month collection snapshot")
     parser.add_argument("--db", type=Path, default=ROOT / ".audit" / "kaitori.sqlite3")
     parser.add_argument("--output-root", type=Path, default=ROOT / "web" / "public" / "data" / "collections")
-    parser.add_argument("--since", default="2026-05-13")
-    parser.add_argument("--until", default="2026-08-13")
+    parser.add_argument("--since", default=watermark["since"])
+    parser.add_argument("--until", default=watermark["until"])
+    parser.add_argument("--cutoff-at", default=watermark["cutoff_at"])
     parser.add_argument("--job-id", action="append", default=[])
     return parser
 
@@ -263,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     args = build_parser().parse_args(argv)
-    manifest = export_snapshot(args.db, args.output_root, args.since, args.until, args.job_id)
+    manifest = export_snapshot(args.db, args.output_root, args.since, args.until, args.cutoff_at, args.job_id)
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     return 0
 

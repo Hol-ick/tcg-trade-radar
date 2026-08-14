@@ -38,6 +38,15 @@ class ContractTests(unittest.TestCase):
         self.assertTrue(request.keep_raw)
         self.assertTrue(request.review_unmatched)
 
+        watermarked = JobRequest.from_dict({
+            "gallery_id": "tcggame",
+            "cutoff_at": "2026-08-13T17:09:45+09:00",
+        })
+        self.assertEqual(watermarked.cutoff_at, "2026-08-13T17:09:45+09:00")
+
+        with self.assertRaises(ValueError):
+            JobRequest.from_dict({"gallery_id": "tcggame", "cutoff_at": "2026-08-13T17:09:45"})
+
         with self.assertRaises(ValueError):
             JobRequest.from_dict({"gallery_id": "tcggame", "max_posts": 20001})
 
