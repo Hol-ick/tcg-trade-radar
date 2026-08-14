@@ -18,6 +18,10 @@ class NormalizationTests(unittest.TestCase):
         self.assertEqual(normalize_listing_card_label("No.39 유토피아 시크", "sell"), "No.39 유토피아 시크")
         self.assertEqual(normalize_listing_card_label("OP01-001 루피 2장", "sell"), "OP01-001 루피")
 
+    def test_removes_per_unit_and_shipping_noise(self):
+        self.assertEqual(normalize_listing_card_label("블루아이즈 한장 장당 준등기 택포", "sell"), "블루아이즈")
+        self.assertEqual(normalize_listing_card_label("준등포", "sell"), "")
+
     def test_does_not_turn_trade_only_text_into_a_card(self):
         self.assertEqual(normalize_listing_card_label("구매합니다", "buy"), "")
         self.assertEqual(normalize_listing_card_label("", "sell"), "")

@@ -9,7 +9,9 @@ _TRADE_WORDS = re.compile(
     re.IGNORECASE,
 )
 _QUANTITY = re.compile(r"(?<![A-Za-z가-힣])\d+\s*(?:장|매|개|통|세트)(?:분)?\b", re.IGNORECASE)
+_PER_UNIT = re.compile(r"(?:장|매|개|통)\s*당\b|\b한\s*장\b", re.IGNORECASE)
 _PRICE = re.compile(r"(?<![A-Za-z가-힣0-9.-])\d[\d,]*(?:\.\d+)?\s*(?:원|만원|만)?(?=$|[^A-Za-z가-힣0-9])", re.IGNORECASE)
+_SHIPPING = re.compile(r"(?:준등포|준등기|등포|등기|택포|택배포함|배송비\s*포함|직거래)", re.IGNORECASE)
 _SEPARATORS = re.compile(r"[\[\](){}<>|/,:;]+")
 _SPACES = re.compile(r"\s+")
 
@@ -22,6 +24,8 @@ def normalize_listing_card_label(raw_label: str, listing_type: str = "") -> str:
         return ""
     value = _TRADE_WORDS.sub(" ", value)
     value = _QUANTITY.sub(" ", value)
+    value = _PER_UNIT.sub(" ", value)
+    value = _SHIPPING.sub(" ", value)
     value = _PRICE.sub(" ", value)
     value = _SEPARATORS.sub(" ", value)
     value = _SPACES.sub(" ", value).strip(" -._~")
