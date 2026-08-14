@@ -69,6 +69,29 @@ export type ResultRow = {
   is_repost?: number
 }
 
+export type MarketIntent = "sell" | "buy" | "trade" | "unknown"
+export type MarketQuality = "usable" | "needs_review" | "context_only" | "excluded"
+
+export type MarketRow = {
+  id: string
+  galleryId: string
+  cardName: string
+  cardKey: string
+  sellerName: string
+  listingType: MarketIntent
+  priceKrw: number | null
+  quantity: number
+  dateKey: string
+  postedAt: string
+  title: string
+  rawLine: string
+  postUrl: string
+  reviewStatus: string
+  quality: MarketQuality
+  priceStatus: "exact" | "estimated" | "missing" | "removed" | "unknown"
+  priceScope: "per_card" | "per_quantity" | "bundle" | "unknown"
+}
+
 export type WeekSnapshot = {
   since: string
   until: string

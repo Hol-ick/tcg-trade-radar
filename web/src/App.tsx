@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { ArrowLeft, ArrowRight, ExternalLink, Play } from "lucide-react"
 
 import { DevPage } from "@/dev-page"
+import { MarketExplorer } from "@/market-explorer"
 import { ResultTable } from "@/components/result-table"
 import { SellerPanel } from "@/components/seller-panel"
 import { createJob, downloadJobCsv, getHealth, getSellers } from "@/lib/api"
@@ -12,8 +13,9 @@ import { getCurrentWeekRange, isCurrentOrFuture, shiftWeek, type WeekRange } fro
 const COLLECTION_SUBJECTS = ["판매", "구매", "교환", "판매/교환"]
 
 export default function App() {
-  const isDevPage = window.location.pathname.endsWith("/dev") || window.location.pathname.endsWith("/dev/") || new URLSearchParams(window.location.search).get("page") === "dev"
-  return isDevPage ? <DevPage /> : <LiveConsole />
+  const page = new URLSearchParams(window.location.search).get("page")
+  const isCollector = window.location.pathname.endsWith("/dev") || window.location.pathname.endsWith("/dev/") || page === "dev" || page === "collector"
+  return isCollector ? <DevPage /> : <MarketExplorer />
 }
 
 export function LiveConsole({ dev = false }: { dev?: boolean }) {
@@ -24,7 +26,7 @@ export function LiveConsole({ dev = false }: { dev?: boolean }) {
   const [maxPages, setMaxPages] = useState("5")
   const [delay, setDelay] = useState("0.5")
   const [jobId, setJobId] = useState<string | null>(null)
-  const [health, setHealth] = useState<"checking" | "online" | "offline">("checking")
+  const [health, setHealth] = useState<"checking" | "online" | "offline">(import.meta.env.DEV ? "checking" : "offline")
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [sellers, setSellers] = useState<import("@/lib/types").SellerSummary[]>([])
@@ -37,7 +39,10 @@ export function LiveConsole({ dev = false }: { dev?: boolean }) {
   const isNextDisabled = isCurrentOrFuture(range)
   const visibleError = submitError || error
 
-  useEffect(() => { getHealth().then(() => setHealth("online")).catch(() => setHealth("offline")) }, [])
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    getHealth().then(() => setHealth("online")).catch(() => setHealth("offline"))
+  }, [])
   useEffect(() => {
     if (activeJob?.state !== "completed") return
     getSellers(gallery.id).then((payload) => setSellers(payload.sellers)).catch(() => setSellers([]))
