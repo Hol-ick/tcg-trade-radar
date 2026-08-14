@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-14T17:52:18+09:00",
+  "source_file": "kaitori.sqlite3",
+  "source_size": 2924371968,
+  "source_sha256": "1a37a9b10c60e5debcc1896d5b28b8d593f980800f59e89610dea8f4169f3726",
+  "chunk_size": 536870912,
+  "parts": [
+    {
+      "file": "kaitori.sqlite3.part-0001",
+      "size": 536870912,
+      "sha256": "f722b46d79dd97adda06aae4e73cac46df897c84186111cad47b229b9fe2857a"
+    },
+    {
+      "file": "kaitori.sqlite3.part-0002",
+      "size": 536870912,
+      "sha256": "aee1bd4e95c41005de4ddf890d200e9ed0f1e78f3bcf5780d27f98f045359486"
+    },
+    {
+      "file": "kaitori.sqlite3.part-0003",
+      "size": 536870912,
+      "sha256": "7475fd88e2b63319d7b66394667c8fa278c7f5748918275bc5135e02b47e42c4"
+    },
+    {
+      "file": "kaitori.sqlite3.part-0004",
+      "size": 536870912,
+      "sha256": "55b5235bc41d61de42b96c2fbc91f7a7e45ff0306dcfdad984f0085114283cfd"
+    },
+    {
+      "file": "kaitori.sqlite3.part-0005",
+      "size": 536870912,
+      "sha256": "29a747dad1ce902b71dac1b2fb53599162e65b2976e957af1639ea734fe1a674"
+    },
+    {
+      "file": "kaitori.sqlite3.part-0006",
+      "size": 240017408,
+      "sha256": "bdf5a8ec32206401ee7f7767ab896954080742ab5e82176c3bc5564e5153c415"
+    }
+  ],
+  "reassembly": "Concatenate parts in listed order to recreate source_file byte-for-byte; verify source_sha256."
+}

@@ -7,4 +7,6 @@
 
 `manifest.json`은 게임별 완료 상태와 실제 게시글 날짜 범위를 기록합니다. 수집 프로세스가 중단되면 다음 실행에서 동일 워터마크의 작업을 재사용하여 다시 수집합니다.
 
-원문 HTML은 로컬 감사용 SQLite에 보존하고, Git에는 구조화된 게시글·거래 행·댓글·로그만 공개합니다.
+구조화된 게시글·거래 행·댓글·로그는 이 디렉터리에 저장합니다. 원문 HTML과 수집 당시의 SQLite 전체 데이터는 `data/raw/collections/2026-02-14_2026-08-13/kaitori.sqlite3.part-*` 조각으로 원본 그대로 보존하며 Git LFS로 관리합니다. `raw-dataset-manifest.json`의 SHA-256으로 복원을 확인할 수 있습니다.
+
+현재 manifest의 상태가 `in_progress_or_partial`이면 반년 전체가 아니라 체크포인트 시점까지 수집된 부분 데이터입니다.

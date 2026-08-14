@@ -5,7 +5,8 @@
 - 대상 게임: `tcggame`, `onepiececardgame`, `pokemoncardgame`, `digimontcg`, `vg`
 - 수집 방식: 게임별 Python 프로세스, 상세글 동시 요청 4개, 요청 간격 0.25초
 - 재개 방식: 동일 작업을 다시 실행해도 기존 source/post를 재사용하고 중복 연결을 피한다.
-- 공개 스냅샷: 아직 생성하지 않음. 현재 SQLite와 로그는 로컬 감사용이며 저장소에는 포함하지 않는다.
+- 공개 스냅샷: 현재 체크포인트 기준 부분 수집분을 `web/public/data/collections/2026-02-14_2026-08-13`에 생성했다.
+- 원본 보존본: 전체 SQLite를 `data/raw/collections/2026-02-14_2026-08-13/kaitori.sqlite3.part-*` 조각과 `raw-dataset-manifest.json`으로 Git LFS에 보존한다.
 
 ## 보존된 코드 상태
 
@@ -37,4 +38,4 @@
 1. 재시도 예외 처리의 `http_error` 미초기화 문제를 수정하고 단위 테스트를 추가한다.
 2. 네트워크가 회복되면 같은 수집 작업을 재개해 기존 source를 활용한다.
 3. 다섯 작업이 모두 완료된 뒤 기간 경계·중복·누락·댓글·상한 초과를 검증한다.
-4. 검증을 통과한 경우에만 `web/public/data/collections/2026-02-14_2026-08-13` 공개 CSV/JSONL을 생성하고 GitHub에 반영한다.
+4. 반년 수집이 끝나면 같은 기간 디렉터리의 구조화 CSV/JSONL과 Git LFS 원본 DB를 갱신하고, manifest의 상태를 `complete`로 바꾼다.

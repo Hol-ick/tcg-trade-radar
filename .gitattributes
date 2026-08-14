@@ -1,0 +1,2 @@
+data/raw/collections/2026-02-14_2026-08-13/kaitori.sqlite3 filter=lfs diff=lfs merge=lfs -text
+data/raw/collections/2026-02-14_2026-08-13/kaitori.sqlite3.part-* filter=lfs diff=lfs merge=lfs -text
