@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from calendar import monthrange
 from datetime import date
 from pathlib import Path
@@ -56,6 +57,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def is_transient_failure(status: dict[str, Any]) -> bool:
+    error = str(status.get("error_message") or "").lower()
+    return any(token in error for token in (
+        "urlerror",
+        "getaddrinfo",
+        "timeout",
+        "connection",
+        "temporarily",
+        "name or service not known",
+    ))
+
+
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -90,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_posts=args.max_posts,
                 max_pages=args.max_pages,
                 delay=args.delay,
-                max_retries=2,
+                max_retries=5,
                 buy_rate=60,
                 keep_raw=True,
                 review_unmatched=True,
@@ -104,7 +117,16 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 job_id = service.create_job(request, start=False)
             print(json.dumps({"event": "game_start", "game": game["name"], "gallery_id": game["id"], "job_id": job_id, "reused": reused}, ensure_ascii=False), flush=True)
-            status = service.get_job_status(job_id) if existing and existing["state"] == "completed" else service.run_job(job_id)
+            retry_attempt = 0
+            while True:
+                status = service.get_job_status(job_id) if existing and existing["state"] == "completed" else service.run_job(job_id)
+                if status["state"] != "failed" or not is_transient_failure(status) or retry_attempt >= 4:
+                    break
+                retry_attempt += 1
+                print(json.dumps({"event": "game_retry", "gallery_id": game["id"], "job_id": job_id, "attempt": retry_attempt, "reason": status["error_message"]}, ensure_ascii=False), flush=True)
+                repository.reset_job(job_id)
+                time.sleep(20)
+                existing = None
             logs = repository.list_job_logs(job_id, limit=20_000)
             result = {
                 "event": "game_done",
