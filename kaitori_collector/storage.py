@@ -354,6 +354,25 @@ class Repository:
         result["counts"] = self._counts_for_job(job_id)
         return result
 
+    def find_latest_job(self, gallery_id: str, since: str | None, until: str | None, cutoff_at: str | None) -> dict[str, Any] | None:
+        """Find the newest backfill job with the same collection boundary."""
+        rows = self.connection.execute(
+            """
+            SELECT * FROM kaitori_jobs
+            WHERE gallery_id = ? AND since IS ? AND until IS ?
+            ORDER BY created_at DESC, id DESC
+            """,
+            (gallery_id, since, until),
+        ).fetchall()
+        for row in rows:
+            try:
+                config = json.loads(row["config_json"] or "{}")
+            except json.JSONDecodeError:
+                config = {}
+            if config.get("cutoff_at") == cutoff_at:
+                return dict(row)
+        return None
+
     def update_job(self, job_id: str, *, state: str | None = None, error_message: str | None = None, finished_at: str | None = None, last_success_at: str | None = None) -> None:
         updates: list[str] = []
         values: list[Any] = []

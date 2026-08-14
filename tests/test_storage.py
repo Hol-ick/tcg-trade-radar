@@ -27,6 +27,24 @@ def sample_row() -> ExtractedRow:
 
 
 class StorageTests(unittest.TestCase):
+    def test_find_latest_job_matches_collection_watermark(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            cutoff_at = "2026-08-13T17:09:45+09:00"
+            job_id = repo.create_job(JobRequest(
+                gallery_id="tcggame",
+                since="2026-02-14",
+                until="2026-08-13",
+                cutoff_at=cutoff_at,
+            ))
+
+            found = repo.find_latest_job("tcggame", "2026-02-14", "2026-08-13", cutoff_at)
+
+            self.assertIsNotNone(found)
+            self.assertEqual(found["id"], job_id)
+            self.assertIsNone(repo.find_latest_job("tcggame", "2026-02-14", "2026-08-13", "2026-08-13T17:09:46+09:00"))
+            repo.close()
+
     def test_same_source_and_row_are_idempotent_and_reviews_are_append_only(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "kaitori.sqlite3")

@@ -42,7 +42,7 @@ def subtract_months(value: date, months: int) -> date:
 
 def build_parser() -> argparse.ArgumentParser:
     watermark = load_watermark()
-    parser = argparse.ArgumentParser(description="Run a complete three-month multi-game DCInside backfill")
+    parser = argparse.ArgumentParser(description="Run a complete multi-game DCInside backfill")
     parser.add_argument("--since", default=watermark["since"])
     parser.add_argument("--until", default=watermark["until"])
     parser.add_argument("--cutoff-at", default=watermark["cutoff_at"])
@@ -52,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-posts", type=int, default=20_000)
     parser.add_argument("--max-pages", type=int, default=5_000)
     parser.add_argument("--game-id", action="append", choices=[game["id"] for game in GAMES])
+    parser.add_argument("--no-resume", action="store_true", help="기존 동일 워터마크 작업을 재사용하지 않음")
     return parser
 
 
@@ -63,6 +64,18 @@ def main(argv: list[str] | None = None) -> int:
     repository = Repository(args.db)
     service = JobService(repository)
     summary: list[dict[str, Any]] = []
+    manifest_path = args.manifest or ROOT / ".audit" / f"collection-backfill-{args.since}-{args.until}.json"
+
+    def write_manifest() -> None:
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps({
+            "since": args.since,
+            "until": args.until,
+            "cutoff_at": args.cutoff_at,
+            "watermark_path": str(WATERMARK_PATH),
+            "games": summary,
+        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
     try:
         print(json.dumps({"event": "collection_start", "since": args.since, "until": args.until, "cutoff_at": args.cutoff_at, "games": [game["id"] for game in selected]}, ensure_ascii=False), flush=True)
         for game in selected:
@@ -82,9 +95,16 @@ def main(argv: list[str] | None = None) -> int:
                 keep_raw=True,
                 review_unmatched=True,
             )
-            job_id = service.create_job(request, start=False)
-            print(json.dumps({"event": "game_start", "game": game["name"], "gallery_id": game["id"], "job_id": job_id}, ensure_ascii=False), flush=True)
-            status = service.run_job(job_id)
+            existing = None if args.no_resume else repository.find_latest_job(game["id"], args.since, args.until, args.cutoff_at)
+            reused = existing is not None
+            if existing is not None:
+                job_id = existing["id"]
+                if existing["state"] != "completed":
+                    repository.reset_job(job_id)
+            else:
+                job_id = service.create_job(request, start=False)
+            print(json.dumps({"event": "game_start", "game": game["name"], "gallery_id": game["id"], "job_id": job_id, "reused": reused}, ensure_ascii=False), flush=True)
+            status = service.get_job_status(job_id) if existing and existing["state"] == "completed" else service.run_job(job_id)
             logs = repository.list_job_logs(job_id, limit=20_000)
             result = {
                 "event": "game_done",
@@ -97,20 +117,12 @@ def main(argv: list[str] | None = None) -> int:
                 "errors": [log["message"] for log in logs if log["level"] == "error"][-20:],
             }
             summary.append(result)
+            write_manifest()
             print(json.dumps(result, ensure_ascii=False), flush=True)
     finally:
         repository.close()
 
-    manifest = {
-        "since": args.since,
-        "until": args.until,
-        "cutoff_at": args.cutoff_at,
-        "watermark_path": str(WATERMARK_PATH),
-        "games": summary,
-    }
-    manifest_path = args.manifest or ROOT / ".audit" / f"three-month-collection-{args.since}-{args.until}.json"
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_manifest()
     print(json.dumps({"event": "collection_done", "manifest": str(manifest_path), "failed_games": [item["gallery_id"] for item in summary if item["state"] != "completed"]}, ensure_ascii=False), flush=True)
     return 0 if all(item["state"] == "completed" for item in summary) else 1
 
