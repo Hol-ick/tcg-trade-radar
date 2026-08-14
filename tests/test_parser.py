@@ -1,7 +1,9 @@
 import gzip
 import unittest
+from urllib.error import HTTPError
 from unittest.mock import patch
 
+from kaitori_collector.browser_transport import BrowserTransportError
 from kaitori_collector.html import DCInsideHTMLParser, parse_html
 from kaitori_collector.parser import (
     SourceResponseError,
@@ -169,6 +171,24 @@ class ParserTests(unittest.TestCase):
         with patch("kaitori_collector.parser.fetch_text", side_effect=http_error):
             with patch("kaitori_collector.parser.fetch_text_browser", return_value=browser_html):
                 self.assertEqual(fetch_text_auto("https://example.test/list"), browser_html)
+
+    def test_auto_transport_preserves_http_error_when_browser_fallback_fails(self):
+        url = "https://gall.dcinside.com/mgallery/board/lists?id=vg"
+        desktop_error = HTTPError(url, 403, "blocked", {}, None)
+        browser_error = BrowserTransportError(
+            url,
+            status=None,
+            characters=0,
+            title="",
+            reason="browser dns failure",
+        )
+        with patch("kaitori_collector.parser.fetch_text", side_effect=desktop_error):
+            with patch("kaitori_collector.parser.fetch_text_mobile", side_effect=OSError("mobile dns failure")):
+                with patch("kaitori_collector.parser.fetch_text_browser", side_effect=browser_error):
+                    with self.assertRaises(SourceResponseError) as context:
+                        fetch_text_auto(url)
+        self.assertEqual(context.exception.status, 403)
+        self.assertIn("mobile dns failure", context.exception.fallback_error)
 
     def test_empty_source_response_exposes_http_diagnostics(self):
         with patch("kaitori_collector.parser.urlopen", return_value=_EmptyResponse()):

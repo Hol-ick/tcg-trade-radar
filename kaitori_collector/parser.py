@@ -186,11 +186,12 @@ def fetch_text_browser(url: str, timeout: float = 30.0, user_agent: str = DEFAUL
 
 def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_USER_AGENT) -> str:
     """Try desktop HTTP, then mobile HTTP, then the browser transport."""
+    http_error: SourceResponseError | HTTPError | None = None
     try:
         desktop_body = fetch_text(url, timeout, user_agent)
         if _has_expected_source_markup(url, desktop_body):
             return desktop_body
-        http_error: SourceResponseError | HTTPError = SourceResponseError(
+        http_error = SourceResponseError(
             url,
             status=200,
             content_length=str(len(desktop_body)),
@@ -198,7 +199,8 @@ def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_U
             transport="http",
             fallback_error="response-shape-unrecognized",
         )
-    except (SourceResponseError, HTTPError) as http_error:
+    except (SourceResponseError, HTTPError) as error:
+        http_error = error
         if isinstance(http_error, SourceResponseError) and http_error.content_length in (None, "", "0"):
             try:
                 desktop_retry = fetch_text(url, timeout, user_agent)
