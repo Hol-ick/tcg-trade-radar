@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react"
-import { ArrowUpRight, Database, FileUp, Search, SlidersHorizontal, X } from "lucide-react"
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react"
+import { Activity, ArrowUpRight, BarChart3, Database, FileUp, LayoutDashboard, Search, Table2, UploadCloud, Users, X } from "lucide-react"
 
 import { PriceTrendChart, SupplyDemandChart } from "@/components/market-charts"
 import { datasetUrl, parseMarketCsv, type MarketDataset } from "@/lib/market-data"
@@ -28,10 +28,10 @@ export function MarketExplorer() {
     setLoadError("")
     try {
       const response = await fetch(datasetUrl(fileName), { cache: "no-store" })
-      if (!response.ok) throw new Error("샘플 CSV를 불러오지 못했습니다. (" + response.status + ")")
+      if (!response.ok) throw new Error(`샘플 CSV를 불러오지 못했습니다 (${response.status})`)
       setDataset(parseMarketCsv(await response.text(), fileName))
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "CSV를 불러오지 못했습니다.")
+      setLoadError(error instanceof Error ? error.message : "CSV를 불러오지 못했습니다")
     }
   }
 
@@ -40,7 +40,7 @@ export function MarketExplorer() {
     void fetchSample(SAMPLE_FILES[0].file).then((nextDataset) => {
       if (!cancelled) setDataset(nextDataset)
     }).catch((error) => {
-      if (!cancelled) setLoadError(error instanceof Error ? error.message : "CSV를 불러오지 못했습니다.")
+      if (!cancelled) setLoadError(error instanceof Error ? error.message : "CSV를 불러오지 못했습니다")
     })
     return () => { cancelled = true }
   }, [])
@@ -61,6 +61,7 @@ export function MarketExplorer() {
   const summary = useMemo(() => summarize(filteredRows), [filteredRows])
   const dateRange = useMemo(() => getDateRange(dataset?.rows || []), [dataset])
   const hasFilters = Boolean(query || intent !== "all" || quality !== "all" || since || until)
+  const openFilePicker = () => fileInput.current?.click()
 
   const handleFiles = (files: FileList | null) => {
     const file = files?.[0]
@@ -68,9 +69,9 @@ export function MarketExplorer() {
     setLoadError("")
     const reader = new FileReader()
     reader.onload = () => {
-      try { setDataset(parseMarketCsv(String(reader.result || ""), file.name)) } catch { setLoadError("CSV 형식을 읽지 못했습니다.") }
+      try { setDataset(parseMarketCsv(String(reader.result || ""), file.name)) } catch { setLoadError("CSV 형식을 읽지 못했습니다") }
     }
-    reader.onerror = () => setLoadError("파일을 읽지 못했습니다.")
+    reader.onerror = () => setLoadError("파일을 읽지 못했습니다")
     reader.readAsText(file, "utf-8")
   }
 
@@ -80,45 +81,91 @@ export function MarketExplorer() {
     handleFiles(event.dataTransfer.files)
   }
 
+  const resetFilters = () => {
+    setQuery("")
+    setIntent("all")
+    setQuality("all")
+    setSince("")
+    setUntil("")
+  }
+
   return <main className="explorer-shell">
-    <header className="explorer-topbar">
-      <a className="explorer-brand" href={import.meta.env.BASE_URL} aria-label="TCG Trade Radar 홈"><span className="brand-stamp">TR</span><span>TCG Trade Radar</span></a>
-      <nav className="top-nav" aria-label="보조 메뉴"><span className="live-dot" />CSV MARKET LENS<a href="?page=collector">수집 관제판 <ArrowUpRight size={14} /></a></nav>
-    </header>
+    <aside className="saas-sidebar">
+      <a className="saas-brand" href={import.meta.env.BASE_URL} aria-label="TCG Trade Radar 홈">
+        <span className="brand-mark">TR</span>
+        <span><strong>Trade Radar</strong><small>Market intelligence</small></span>
+      </a>
 
-    <div className="explorer-layout">
-      <aside className="filter-rail">
-        <div className="rail-title"><span className="section-kicker">CONTROL ROOM</span><h2><SlidersHorizontal size={18} /> 필터</h2></div>
-        <label className="search-field" htmlFor="market-search"><Search size={16} /><input id="market-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="카드, 판매자, 원문 검색" /><kbd>/</kbd></label>
-        <div className="filter-section"><span className="filter-label">거래 의도</span><div className="intent-pills">{(["all", "sell", "buy", "trade"] as IntentFilter[]).map((value) => <button key={value} className={intent === value ? "active" : ""} type="button" onClick={() => setIntent(value)}>{intentLabel(value)}</button>)}</div></div>
-        <div className="filter-section"><span className="filter-label">데이터 품질</span><select value={quality} onChange={(event) => setQuality(event.target.value as QualityFilter)}><option value="all">전체 품질</option><option value="usable">분석 가능</option><option value="needs_review">검수 필요</option><option value="context_only">참고 전용</option><option value="excluded">제외</option></select></div>
-        <div className="filter-section date-filter"><span className="filter-label">게시 날짜</span><label htmlFor="date-since">시작일<input id="date-since" type="date" value={since} min={dateRange.min} max={dateRange.max} onChange={(event) => setSince(event.target.value)} /></label><label htmlFor="date-until">종료일<input id="date-until" type="date" value={until} min={dateRange.min} max={dateRange.max} onChange={(event) => setUntil(event.target.value)} /></label></div>
-        {hasFilters && <button className="clear-button" type="button" onClick={() => { setQuery(""); setIntent("all"); setQuality("all"); setSince(""); setUntil("") }}><X size={14} /> 필터 초기화</button>}
-        <div className="rail-note"><Database size={16} /><p>가격이 없는 행은 거래량에 남기고 가격 통계에서는 제외합니다.</p></div>
-      </aside>
+      <div className="sidebar-section-label">Workspace</div>
+      <nav className="sidebar-nav" aria-label="주 메뉴">
+        <a className="active" href="#overview"><LayoutDashboard size={16} />Overview</a>
+        <a href="#signals"><Table2 size={16} />Card signals</a>
+        <a href="?page=collector"><Activity size={16} />Collector<ArrowUpRight size={13} className="nav-external" /></a>
+      </nav>
 
-      <section className="explorer-main">
-        <div className="explorer-hero"><div><span className="section-kicker">TCG MARKET OBSERVATORY</span><h1>거래 글을<br /><em>시장 신호</em>로 읽기</h1><p>CSV 하나로 카드 가격의 흐름과 매도·매수 온도를 빠르게 확인합니다.</p></div><div className="hero-pulse" aria-hidden="true"><span>SUPPLY</span><i /><span>DEMAND</span></div></div>
+      <div className="sidebar-divider" />
+      <div className="sidebar-section-label">Data source</div>
+      <div className="sidebar-source">
+        <span className="source-icon"><Database size={15} /></span>
+        <span><strong>{dataset?.name || "Loading CSV"}</strong><small>{dataset ? `${dataset.rows.length.toLocaleString("ko-KR")} rows loaded` : "Preparing workspace"}</small></span>
+      </div>
+      <div className="sidebar-spacer" />
+      <div className="sidebar-workspace"><span>TCG</span><span><strong>Personal workspace</strong><small>CSV market analysis</small></span></div>
+    </aside>
 
-        <section className="dataset-bar" aria-label="데이터 소스"><div className="dataset-meta"><span className="data-icon"><Database size={16} /></span><div><strong>{dataset?.name || "CSV 준비 중"}</strong><span>{dataset ? dataset.rows.length.toLocaleString("ko-KR") + "행 · " + dataset.headers.length + "개 컬럼" : "불러오는 중"}</span></div></div><div className="dataset-actions"><select aria-label="샘플 CSV 선택" value={dataset?.name || SAMPLE_FILES[0].file} onChange={(event) => void loadSample(event.target.value)}>{SAMPLE_FILES.map((sample) => <option key={sample.file} value={sample.file}>{sample.label}</option>)}</select><button className={"upload-button " + (isDragging ? "dragging" : "")} type="button" onClick={() => fileInput.current?.click()} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={onDrop}><FileUp size={16} /> CSV 열기</button><input ref={fileInput} className="sr-only" type="file" accept=".csv,text/csv" onChange={(event: ChangeEvent<HTMLInputElement>) => handleFiles(event.target.files)} /></div></section>
+    <section className="saas-main">
+      <header className="saas-header">
+        <div className="breadcrumbs"><span>Workspace</span><span>/</span><strong>Market explorer</strong></div>
+        <div className="header-actions"><span className="connection-pill"><i />Local CSV mode</span><a className="header-collector-link" href="?page=collector">Open collector <ArrowUpRight size={14} /></a></div>
+      </header>
+
+      <div className="saas-content">
+        <section className="page-heading" id="overview">
+          <div><span className="eyebrow">MARKET EXPLORER</span><h1>Market overview</h1><p>카드 거래 CSV를 불러와 가격, 수요, 공급 신호를 한 화면에서 확인하세요.</p></div>
+          <button className="button button-primary" type="button" onClick={openFilePicker}><UploadCloud size={16} />Open CSV</button>
+        </section>
+
+        <section className="source-card" aria-label="데이터 소스">
+          <div className="source-card-main"><span className="source-avatar"><Database size={17} /></span><span><small>Current dataset</small><strong>{dataset?.name || "CSV 준비 중"}</strong><em>{dataset ? `${dataset.rows.length.toLocaleString("ko-KR")} rows · ${dataset.headers.length} columns` : "Loading data"}</em></span></div>
+          <div className="source-card-actions"><select aria-label="샘플 CSV 선택" value={dataset?.name || SAMPLE_FILES[0].file} onChange={(event) => void loadSample(event.target.value)}>{SAMPLE_FILES.map((sample) => <option key={sample.file} value={sample.file}>{sample.label}</option>)}</select><button className={`button button-secondary ${isDragging ? "dragging" : ""}`} type="button" onClick={openFilePicker} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={onDrop}><FileUp size={15} />Choose file</button><input ref={fileInput} className="sr-only" type="file" accept=".csv,text/csv" onChange={(event: ChangeEvent<HTMLInputElement>) => handleFiles(event.target.files)} /></div>
+        </section>
         {loadError && <div className="explorer-error" role="alert">{loadError}</div>}
 
-        <section className="metric-grid" aria-label="현재 데이터 요약"><Metric label="분석 행" value={summary.rows} detail={hasFilters ? "필터 결과" : "전체 CSV"} tone="coral" /><Metric label="카드 키" value={summary.cards} detail={summary.missingPrice.toLocaleString("ko-KR") + "건 가격 미기재"} tone="ink" /><Metric label="공급 / 수요" value={summary.supply + " / " + summary.demand} detail={"수량 " + summary.supplyQuantity.toLocaleString("ko-KR") + " / " + summary.demandQuantity.toLocaleString("ko-KR")} tone="lime" /><Metric label="판매자" value={summary.sellers} detail={summary.pricePoints + "개 가격 포인트"} tone="mint" /></section>
+        <section className="filter-card" aria-label="시장 데이터 필터">
+          <div className="filter-card-header"><div><span className="eyebrow">FILTERS</span><h2>Refine this view</h2></div>{hasFilters && <button className="clear-button" type="button" onClick={resetFilters}><X size={14} />Clear filters</button>}</div>
+          <div className="filter-controls">
+            <label className="saas-field search-control" htmlFor="market-search"><span>Search</span><div><Search size={15} /><input id="market-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Card, seller, or post title" /><kbd>/</kbd></div></label>
+            <div className="saas-field"><span>Listing type</span><div className="intent-tabs">{(["all", "sell", "buy", "trade"] as IntentFilter[]).map((value) => <button key={value} className={intent === value ? "active" : ""} type="button" onClick={() => setIntent(value)}>{intentLabel(value)}</button>)}</div></div>
+            <label className="saas-field" htmlFor="quality-filter"><span>Data quality</span><select id="quality-filter" value={quality} onChange={(event) => setQuality(event.target.value as QualityFilter)}><option value="all">All quality levels</option><option value="usable">Analysis ready</option><option value="needs_review">Needs review</option><option value="context_only">Context only</option><option value="excluded">Excluded</option></select></label>
+            <div className="saas-field date-controls"><span>Date range</span><div><input id="date-since" aria-label="시작일" type="date" value={since} min={dateRange.min} max={dateRange.max} onChange={(event) => setSince(event.target.value)} /><span>to</span><input id="date-until" aria-label="종료일" type="date" value={until} min={dateRange.min} max={dateRange.max} onChange={(event) => setUntil(event.target.value)} /></div></div>
+          </div>
+          <div className="filter-footer"><span>{filteredRows.length.toLocaleString("ko-KR")} of {(dataset?.rows.length || 0).toLocaleString("ko-KR")} observations shown</span><span>Price-less rows remain available for volume analysis</span></div>
+        </section>
 
+        <section className="metric-grid" aria-label="현재 데이터 요약">
+          <Metric icon={<BarChart3 size={17} />} label="Observations" value={summary.rows} detail={hasFilters ? "Filtered result" : "Full CSV"} tone="blue" />
+          <Metric icon={<Database size={17} />} label="Card keys" value={summary.cards} detail={`${summary.missingPrice.toLocaleString("ko-KR")} missing prices`} tone="violet" />
+          <Metric icon={<Activity size={17} />} label="Supply / demand" value={`${summary.supply} / ${summary.demand}`} detail={`Qty ${summary.supplyQuantity.toLocaleString("ko-KR")} / ${summary.demandQuantity.toLocaleString("ko-KR")}`} tone="green" />
+          <Metric icon={<Users size={17} />} label="Sellers" value={summary.sellers} detail={`${summary.pricePoints} price points`} tone="amber" />
+        </section>
+
+        <div className="section-heading"><div><span className="eyebrow">ANALYTICS</span><h2>Market signals</h2></div><span className="section-meta">Updated from current dataset</span></div>
         <div className="charts-grid"><PriceTrendChart rows={filteredRows} /><SupplyDemandChart rows={filteredRows} /></div>
         <CardTable rows={filteredRows} />
-      </section>
-    </div>
+      </div>
+    </section>
   </main>
 }
 
 async function fetchSample(fileName: string): Promise<MarketDataset> {
   const response = await fetch(datasetUrl(fileName), { cache: "no-store" })
-  if (!response.ok) throw new Error("샘플 CSV를 불러오지 못했습니다. (" + response.status + ")")
+  if (!response.ok) throw new Error(`샘플 CSV를 불러오지 못했습니다 (${response.status})`)
   return parseMarketCsv(await response.text(), fileName)
 }
 
-function Metric({ label, value, detail, tone }: { label: string; value: string | number; detail: string; tone: string }) { return <article className={"metric-card " + tone}><span>{label}</span><strong>{value}</strong><small>{detail}</small></article> }
+function Metric({ icon, label, value, detail, tone }: { icon: ReactNode; label: string; value: string | number; detail: string; tone: string }) {
+  return <article className={`metric-card ${tone}`}><div className="metric-icon">{icon}</div><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>
+}
 
 function CardTable({ rows }: { rows: MarketRow[] }) {
   const groups = useMemo(() => {
@@ -134,7 +181,7 @@ function CardTable({ rows }: { rows: MarketRow[] }) {
     }
     return [...grouped.values()].sort((left, right) => (right.demand - right.supply) - (left.demand - left.supply) || right.count - left.count).slice(0, 12)
   }, [rows])
-  return <section className="card-table-panel"><div className="panel-bar"><div><span className="section-kicker">CARD SIGNALS</span><h2>카드별 시장 신호</h2></div><span>{groups.length}개 카드 표시</span></div>{groups.length === 0 ? <div className="chart-empty">현재 필터에 맞는 카드가 없습니다.</div> : <div className="card-table-wrap"><table><thead><tr><th>카드</th><th>공급</th><th>수요</th><th>가격 중앙값</th><th>판매자</th><th>최근 게시</th></tr></thead><tbody>{groups.map((group) => <tr key={group.name}><td><strong>{group.name}</strong><small>{group.count}개 관측</small></td><td><span className="table-number supply-text">{group.supply}</span></td><td><span className="table-number demand-text">{group.demand}</span></td><td>{group.prices.length ? Math.round(median(group.prices)).toLocaleString("ko-KR") + "원" : "-"}</td><td>{group.sellers.size}명</td><td>{group.date ? group.date.replaceAll("-", ".") : "-"}</td></tr>)}</tbody></table></div>}</section>
+  return <section className="table-card" id="signals"><div className="table-card-header"><div><span className="eyebrow">CARD SIGNALS</span><h2>Card-level market signals</h2></div><span className="table-count">{groups.length} cards shown</span></div>{groups.length === 0 ? <div className="chart-empty">현재 필터에 맞는 카드가 없습니다.</div> : <div className="card-table-wrap"><table><thead><tr><th>Card</th><th>Supply</th><th>Demand</th><th>Median price</th><th>Sellers</th><th>Last posted</th></tr></thead><tbody>{groups.map((group) => <tr key={group.name}><td><strong>{group.name}</strong><small>{group.count} observations</small></td><td><span className="table-number supply-text">{group.supply}</span></td><td><span className="table-number demand-text">{group.demand}</span></td><td>{group.prices.length ? `${Math.round(median(group.prices)).toLocaleString("ko-KR")}원` : "—"}</td><td>{group.sellers.size}</td><td>{group.date ? group.date.replaceAll("-", ".") : "—"}</td></tr>)}</tbody></table></div>}<div className="table-card-footer"><span>Showing the top 12 cards by market activity</span><span>{rows.length.toLocaleString("ko-KR")} total observations</span></div></section>
 }
 
 function summarize(rows: MarketRow[]) {
@@ -154,4 +201,4 @@ function summarize(rows: MarketRow[]) {
 
 function getDateRange(rows: MarketRow[]) { const dates = rows.map((row) => row.dateKey).filter(Boolean).sort(); return { min: dates[0] || "", max: dates[dates.length - 1] || "" } }
 function median(values: number[]) { const sorted = [...values].sort((left, right) => left - right); const middle = Math.floor(sorted.length / 2); return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2 }
-function intentLabel(value: IntentFilter) { return value === "all" ? "전체" : value === "sell" ? "판매" : value === "buy" ? "구매" : "교환" }
+function intentLabel(value: IntentFilter) { return value === "all" ? "All" : value === "sell" ? "Sell" : value === "buy" ? "Buy" : "Trade" }
