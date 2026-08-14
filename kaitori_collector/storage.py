@@ -157,6 +157,10 @@ CREATE INDEX IF NOT EXISTS kaitori_reviews_row_idx ON kaitori_reviews(row_id, id
 CREATE INDEX IF NOT EXISTS kaitori_job_rows_status_idx ON kaitori_job_rows(job_id, row_id);
 CREATE INDEX IF NOT EXISTS kaitori_job_logs_job_idx ON kaitori_job_logs(job_id, id);
 CREATE INDEX IF NOT EXISTS kaitori_comments_source_idx ON kaitori_comments(source_id, id);
+CREATE INDEX IF NOT EXISTS kaitori_sources_gallery_url_idx ON kaitori_sources(gallery_id, post_url, fetched_at, id);
+CREATE INDEX IF NOT EXISTS kaitori_sources_gallery_post_idx ON kaitori_sources(gallery_id, post_id, fetched_at, id);
+CREATE INDEX IF NOT EXISTS kaitori_sources_seller_listing_idx ON kaitori_sources(seller_id, listing_fingerprint, posted_at);
+CREATE INDEX IF NOT EXISTS kaitori_rows_source_idx ON kaitori_rows(source_id, id);
 
 CREATE TABLE IF NOT EXISTS kaitori_sellers (
   seller_id TEXT PRIMARY KEY,
@@ -317,6 +321,10 @@ class Repository:
                 self.connection.execute(f"ALTER TABLE kaitori_sources ADD COLUMN {column} {definition}")
         self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_sources_seller_idx ON kaitori_sources(seller_id, posted_at)")
         self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_sources_post_family_idx ON kaitori_sources(post_family_id, post_status)")
+        self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_sources_gallery_url_idx ON kaitori_sources(gallery_id, post_url, fetched_at, id)")
+        self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_sources_gallery_post_idx ON kaitori_sources(gallery_id, post_id, fetched_at, id)")
+        self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_sources_seller_listing_idx ON kaitori_sources(seller_id, listing_fingerprint, posted_at)")
+        self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_rows_source_idx ON kaitori_rows(source_id, id)")
         self.connection.execute("CREATE INDEX IF NOT EXISTS kaitori_risk_seller_idx ON kaitori_risk_signals(seller_id, status, id)")
 
     def close(self) -> None:
@@ -548,11 +556,19 @@ class Repository:
             post_id = parts[-1] if parts and parts[-1].isdigit() else ""
         row = self.connection.execute(
             """SELECT * FROM kaitori_sources
-               WHERE gallery_id = ? AND (post_url = ? OR (? <> '' AND post_id = ?))
+               WHERE gallery_id = ? AND post_url = ?
                ORDER BY fetched_at DESC, id DESC
                LIMIT 1""",
-            (gallery_id, post_url, post_id, post_id),
+            (gallery_id, post_url),
         ).fetchone()
+        if row is None and post_id:
+            row = self.connection.execute(
+                """SELECT * FROM kaitori_sources
+                   WHERE gallery_id = ? AND post_id = ?
+                   ORDER BY fetched_at DESC, id DESC
+                   LIMIT 1""",
+                (gallery_id, post_id),
+            ).fetchone()
         return dict(row) if row else None
 
     def get_source(self, source_id: str) -> dict[str, Any] | None:
@@ -858,7 +874,7 @@ class Repository:
         self.connection.commit()
         return self.get_seller(seller_id) or {}
 
-    def list_rows(self, *, job_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+    def list_rows(self, *, job_id: str | None = None, source_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
         query = """SELECT r.*, s.gallery_id, s.post_url, s.title AS post_title, s.posted_at, s.raw_html, s.author_name, s.author_type,
                           s.seller_id, s.identity_scope, s.post_family_id, s.is_repost,
                           sl.display_name AS seller_display_name, sl.risk_score AS seller_risk_score,
@@ -872,6 +888,9 @@ class Repository:
         if job_id:
             query += " AND jr.job_id = ?"
             values.append(job_id)
+        if source_id:
+            query += " AND r.source_id = ?"
+            values.append(source_id)
         if status:
             query += " AND r.status = ?"
             values.append(status)

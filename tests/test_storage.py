@@ -34,6 +34,28 @@ class StorageTests(unittest.TestCase):
             indexes = {row[1] for row in repo.connection.execute("PRAGMA index_list(kaitori_sources)").fetchall()}
 
             self.assertIn("kaitori_sources_post_family_idx", indexes)
+            self.assertIn("kaitori_sources_gallery_url_idx", indexes)
+            self.assertIn("kaitori_sources_gallery_post_idx", indexes)
+            self.assertIn("kaitori_sources_seller_listing_idx", indexes)
+            row_indexes = {row[1] for row in repo.connection.execute("PRAGMA index_list(kaitori_rows)").fetchall()}
+            self.assertIn("kaitori_rows_source_idx", row_indexes)
+            repo.close()
+
+    def test_find_source_falls_back_to_gallery_post_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            source_id, _ = repo.upsert_source({
+                "gallery_id": "tcggame",
+                "post_id": "7",
+                "post_url": "https://example.test/post/7?no=7",
+                "title": "?먮ℓ 移대뱶",
+                "posted_at": "2026-08-12T10:00:00+09:00",
+                "raw_html": "<html>sale</html>",
+            })
+
+            found = repo.find_source_for_post("tcggame", "https://example.test/post/7?no=7&from=list")
+
+            self.assertEqual(found["id"], source_id)
             repo.close()
 
     def test_attaching_existing_source_also_attaches_existing_rows(self):

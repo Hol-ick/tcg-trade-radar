@@ -107,11 +107,13 @@ class JobService:
                 elif not candidates:
                     self._log(job_id, step="list", message=f"{', '.join(subjects)} 말머리 글이 없음", details={"page": page})
                 pending_fetches: dict[str, Future[str]] = {}
+                existing_by_url: dict[str, dict[str, Any] | None] = {}
                 remaining_slots = request.max_posts - posts_seen
                 for candidate_url in candidates:
                     if candidate_url in seen_urls or remaining_slots <= 0:
                         continue
                     existing_candidate = self.repository.find_source_for_post(request.gallery_id, candidate_url)
+                    existing_by_url[candidate_url] = existing_candidate
                     if existing_candidate and existing_candidate.get("posted_at"):
                         continue
                     pending_fetches[candidate_url] = post_fetch_pool.submit(
@@ -127,7 +129,10 @@ class JobService:
                         continue
                     seen_urls.add(post_url)
                     posts_seen += 1
-                    existing_source = self.repository.find_source_for_post(request.gallery_id, post_url)
+                    if post_url in existing_by_url:
+                        existing_source = existing_by_url[post_url]
+                    else:
+                        existing_source = self.repository.find_source_for_post(request.gallery_id, post_url)
                     if existing_source and existing_source.get("posted_at"):
                         posted_at = existing_source["posted_at"]
                         if request.since and _is_before_date(posted_at, request.since):
@@ -211,9 +216,8 @@ class JobService:
                     if self.catalog:
                         from .matcher import match_card
 
-                        for row in self.repository.list_rows(job_id=job_id):
-                            if row["source_id"] == source_id:
-                                self.repository.apply_match(row["id"], match_card(row["card_name_raw"], row["rarity"], self.catalog))
+                        for row in self.repository.list_rows(job_id=job_id, source_id=source_id):
+                            self.repository.apply_match(row["id"], match_card(row["card_name_raw"], row["rarity"], self.catalog))
                 if request.since and page_has_older_post and not page_has_in_range_post:
                     self._log(
                         job_id,
