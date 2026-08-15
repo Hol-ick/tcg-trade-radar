@@ -87,7 +87,7 @@ export function LiveConsole({ dev = false }: { dev?: boolean }) {
     <main className="app-shell" id="top">
       <header className="topbar">
         <a className="brand" href={import.meta.env.BASE_URL} aria-label="TCG 수집 홈"><span className="brand-mark">TCG</span><span>수집 관제판</span></a>
-        <span className={`source-state ${health === "offline" ? "offline" : ""}`}>{dev ? "DEV · " : ""}{health === "online" ? "워커 연결됨" : health === "offline" ? "워커 연결 필요" : "워커 확인 중"}</span>
+        <span className={`source-state ${health === "offline" ? "offline" : ""}`}>{dev ? "개발 모드 · " : ""}{health === "online" ? "수집기 연결됨" : health === "offline" ? "수집기 연결 필요" : "수집기 확인 중"}</span>
       </header>
 
       <div className="content-wrap">

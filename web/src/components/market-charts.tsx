@@ -55,7 +55,7 @@ export function SupplyDemandChart({ rows }: { rows: MarketRow[] }) {
 }
 
 function ChartCard({ title, note, children }: { title: string; note: string; children: React.ReactNode }) {
-  return <article className="chart-card"><div className="chart-heading"><div><p className="section-kicker">MARKET PULSE</p><h3>{title}</h3></div><span>{note}</span></div>{children}</article>
+  return <article className="chart-card"><div className="chart-heading"><div><p className="section-kicker">시장 흐름</p><h3>{title}</h3></div><span>{note}</span></div>{children}</article>
 }
 
 function ChartEmpty({ children }: { children: React.ReactNode }) { return <div className="chart-empty">{children}</div> }
