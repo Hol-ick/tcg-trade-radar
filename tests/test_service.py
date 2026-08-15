@@ -259,6 +259,27 @@ class JobServiceTests(unittest.TestCase):
             self.assertTrue(any("구조" in log["message"] and "재시도" in log["message"] for log in service.get_logs(job_id)))
             repo.close()
 
+    def test_blocked_list_stops_without_retrying(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory) / "kaitori.sqlite3")
+            calls = {"list": 0}
+
+            def blocked_fetcher(url: str) -> str:
+                if "lists" in url:
+                    calls["list"] += 1
+                    return "<html><body>자동입력 방지</body></html>"
+                return POST_HTML
+
+            service = JobService(repo, fetcher=blocked_fetcher, sleep=lambda _: None)
+            job_id = service.create_job(JobRequest(gallery_id="tcggame", max_retries=3), start=False)
+
+            status = service.run_job(job_id)
+
+            self.assertEqual(status["state"], "failed")
+            self.assertEqual(calls["list"], 1)
+            self.assertTrue(any("차단 응답" in log["message"] for log in service.get_logs(job_id)))
+            repo.close()
+
     def test_job_collects_public_comments_and_author_type(self):
         with tempfile.TemporaryDirectory() as directory:
             repo = Repository(Path(directory) / "kaitori.sqlite3")

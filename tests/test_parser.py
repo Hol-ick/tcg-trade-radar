@@ -12,6 +12,7 @@ from kaitori_collector.parser import (
     extract_post,
     fetch_text,
     fetch_text_auto,
+    is_dcinside_public_url,
     mobile_url_for,
     parse_sale_line,
 )
@@ -74,6 +75,26 @@ class ParserTests(unittest.TestCase):
             mobile_url_for("https://gall.dcinside.com/mgallery/board/view/?id=tcggame&no=4305567"),
             "https://m.dcinside.com/board/tcggame/4305567",
         )
+
+    def test_dcinside_public_url_detection(self):
+        self.assertTrue(is_dcinside_public_url("https://gall.dcinside.com/mgallery/board/lists?id=tcggame"))
+        self.assertTrue(is_dcinside_public_url("https://m.dcinside.com/board/tcggame"))
+        self.assertFalse(is_dcinside_public_url("https://example.test/list"))
+
+    def test_dcinside_auto_transport_uses_mobile_before_desktop(self):
+        mobile_html = '''
+        <!DOCTYPE html><html><body><ul class="gall-detail-lst">
+          <li><div class="gall-detail-lnktb"><a class="lt" href="/board/tcggame/1">
+            <ul class="ginfo"><li>판매</li></ul>
+          </a></div></li>
+        </ul></body></html>
+        '''
+        url = "https://gall.dcinside.com/mgallery/board/lists?id=tcggame"
+        with patch("kaitori_collector.parser.fetch_text_mobile", return_value=mobile_html) as mobile:
+            with patch("kaitori_collector.parser.fetch_text") as desktop:
+                self.assertEqual(fetch_text_auto(url), mobile_html)
+                mobile.assert_called_once()
+                desktop.assert_not_called()
 
     def test_auto_transport_tries_mobile_after_empty_http_response(self):
         mobile_html = "<html><body>mobile gallery</body></html>"

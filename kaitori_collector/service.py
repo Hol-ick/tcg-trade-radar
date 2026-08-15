@@ -10,6 +10,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date, datetime
 from typing import Callable, Any
 from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.error import HTTPError
 
 from . import __version__
 from .browser_transport import BrowserTransportError
@@ -35,6 +36,28 @@ def _post_identity(post_url: str) -> str:
     return f"post:{post_id}" if post_id else f"url:{post_url}"
 
 
+class _HostRequestGate:
+    """Serialize request starts per host with a small, configurable floor."""
+
+    def __init__(self, sleep: Callable[[float], None]) -> None:
+        self._sleep = sleep
+        self._next_allowed: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def wait(self, url: str, interval: float) -> None:
+        if interval <= 0:
+            return
+        host = (urlparse(url).hostname or "").lower()
+        if not host:
+            return
+        with self._lock:
+            now = time.monotonic()
+            remaining = self._next_allowed.get(host, 0.0) - now
+            if remaining > 0:
+                self._sleep(remaining)
+            self._next_allowed[host] = time.monotonic() + interval
+
+
 class JobService:
     def __init__(self, repository: Repository, fetcher: Fetcher | None = None, sleep: Callable[[float], None] = time.sleep, catalog: list[Any] | None = None, comment_fetcher: CommentFetcher | None = None) -> None:
         self.repository = repository
@@ -44,6 +67,7 @@ class JobService:
         self.catalog = catalog or []
         self._threads: dict[str, threading.Thread] = {}
         self._thread_lock = threading.Lock()
+        self._request_gate = _HostRequestGate(self.sleep)
 
     def create_job(self, request: JobRequest, *, start: bool = True) -> str:
         job_id = self.repository.create_job(request)
@@ -416,18 +440,28 @@ class JobService:
         self.repository.add_job_log(job_id, level=level, step=step, message=message, details=details)
 
     def _fetch_post_html(self, job_id: str, post_url: str, request: JobRequest) -> str:
-        """Fetch one post in a bounded pool while retaining the configured pacing."""
-        if request.delay > 0:
-            self.sleep(request.delay)
+        """Fetch one post in a bounded pool with host-level pacing."""
         return self._fetch_with_retry(job_id, post_url, request, "post")
 
     def _fetch_with_retry(self, job_id: str, url: str, request: JobRequest, step: str) -> str:
         for attempt in range(request.max_retries + 1):
             try:
+                # Keep the existing user delay as the requested value, but
+                # enforce a conservative floor even when it is configured as 0.
+                self._request_gate.wait(url, max(0.75, request.delay))
                 body = self.fetcher(url)
                 if step in {"list", "post"}:
                     profile = inspect_source_response(body, url, expected=step)
-                    if profile.state in {"empty", "blocked", "structure_changed", "suspicious"} and attempt < request.max_retries:
+                    if profile.state == "blocked":
+                        self._log(
+                            job_id,
+                            level="error",
+                            step=step,
+                            message="차단 응답 감지 · 추가 요청 중단",
+                            details={"url": url, **profile.as_dict()},
+                        )
+                        raise RuntimeError(f"공개 원본 차단 응답: {profile.reason}")
+                    if profile.state in {"empty", "structure_changed", "suspicious"} and attempt < request.max_retries:
                         wait = retry_delay(attempt)
                         self._log(
                             job_id,
@@ -440,6 +474,15 @@ class JobService:
                         continue
                 return body
             except Exception as exc:
+                if isinstance(exc, HTTPError) and 400 <= exc.code < 500:
+                    self._log(
+                        job_id,
+                        level="error",
+                        step=step,
+                        message="HTTP 접근 제한 응답 · 추가 요청 중단",
+                        details={"url": url, "status": exc.code, "error_type": type(exc).__name__},
+                    )
+                    raise
                 if isinstance(exc, (SourceResponseError, BrowserTransportError)):
                     response_message = "원본 응답 구조가 인식되지 않아 fallback을 계속 시도합니다" if isinstance(exc, SourceResponseError) and "response-shape-unrecognized" in exc.fallback_error else "원본 서버가 빈 응답을 반환해 수집을 중단"
                     self._log(
@@ -495,8 +538,29 @@ class JobService:
     def _fetch_comment_with_retry(self, job_id: str, post_url: str, gallery_id: str, post_number: str, ci_t: str, page: int, request: JobRequest) -> str:
         for attempt in range(request.max_retries + 1):
             try:
-                return self.comment_fetcher(post_url, gallery_id, post_number, ci_t, page)
+                self._request_gate.wait(post_url, max(0.75, request.delay))
+                body = self.comment_fetcher(post_url, gallery_id, post_number, ci_t, page)
+                profile = inspect_source_response(body, post_url, expected="comments")
+                if profile.state == "blocked":
+                    self._log(
+                        job_id,
+                        level="error",
+                        step="comments",
+                        message="댓글 차단 응답 감지 · 추가 요청 중단",
+                        details={"url": post_url, "page": page, **profile.as_dict()},
+                    )
+                    raise RuntimeError(f"댓글 원본 차단 응답: {profile.reason}")
+                return body
             except Exception as exc:
+                if isinstance(exc, HTTPError) and 400 <= exc.code < 500:
+                    self._log(
+                        job_id,
+                        level="error",
+                        step="comments",
+                        message="댓글 HTTP 접근 제한 응답 · 추가 요청 중단",
+                        details={"url": post_url, "page": page, "status": exc.code, "error_type": type(exc).__name__},
+                    )
+                    raise
                 if attempt >= request.max_retries or not is_retryable_error(exc):
                     raise
                 wait = retry_delay(attempt)

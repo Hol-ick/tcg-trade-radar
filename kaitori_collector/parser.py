@@ -184,45 +184,69 @@ def fetch_text_browser(url: str, timeout: float = 30.0, user_agent: str = DEFAUL
     return get_default_transport(user_agent=user_agent).fetch(url, timeout)
 
 
+def is_dcinside_public_url(url: str) -> bool:
+    """Return whether a URL belongs to DCInside's public web delivery paths."""
+    hostname = (urlparse(url).hostname or "").lower()
+    return hostname == "dcinside.com" or hostname.endswith(".dcinside.com")
+
+
 def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_USER_AGENT) -> str:
-    """Try desktop HTTP, then mobile HTTP, then the browser transport."""
-    http_error: SourceResponseError | HTTPError | None = None
-    try:
-        desktop_body = fetch_text(url, timeout, user_agent)
-        if _has_expected_source_markup(url, desktop_body):
-            return desktop_body
-        http_error = SourceResponseError(
-            url,
-            status=200,
-            content_length=str(len(desktop_body)),
-            server="unknown",
-            transport="http",
-            fallback_error="response-shape-unrecognized",
-        )
-    except (SourceResponseError, HTTPError) as error:
-        http_error = error
-        if isinstance(http_error, SourceResponseError) and http_error.content_length in (None, "", "0"):
-            try:
-                desktop_retry = fetch_text(url, timeout, user_agent)
-                if _has_expected_source_markup(url, desktop_retry):
-                    return desktop_retry
-            except (SourceResponseError, HTTPError):
-                pass
-    mobile_error: Exception | None = None
-    try:
-        mobile_body = fetch_text_mobile(url, max(timeout, 20.0))
-        if _has_expected_source_markup(url, mobile_body):
-            return mobile_body
-        mobile_error = SourceResponseError(
-            mobile_url_for(url),
-            status=200,
-            content_length=str(len(mobile_body)),
-            server="unknown",
-            transport="mobile-http",
-            fallback_error="response-shape-unrecognized",
-        )
-    except (SourceResponseError, HTTPError, OSError) as error:
-        mobile_error = error
+    """Fetch a public page with a source-aware, bounded fallback order.
+
+    DCInside currently serves empty desktop responses in some environments while
+    its mobile public route remains parseable. Try that route first to avoid
+    spending another request on a known-empty desktop response. No login,
+    identity rotation, or challenge bypass is involved.
+    """
+    desktop_error: SourceResponseError | HTTPError | OSError | None = None
+    mobile_error: SourceResponseError | HTTPError | OSError | None = None
+
+    def try_mobile() -> str | None:
+        nonlocal mobile_error
+        try:
+            mobile_body = fetch_text_mobile(url, max(timeout, 20.0))
+            if _has_expected_source_markup(url, mobile_body):
+                return mobile_body
+            mobile_error = SourceResponseError(
+                mobile_url_for(url),
+                status=200,
+                content_length=str(len(mobile_body)),
+                server="unknown",
+                transport="mobile-http",
+                fallback_error="response-shape-unrecognized",
+            )
+        except (SourceResponseError, HTTPError, OSError) as error:
+            mobile_error = error
+        return None
+
+    def try_desktop() -> str | None:
+        nonlocal desktop_error
+        try:
+            desktop_body = fetch_text(url, timeout, user_agent)
+            if _has_expected_source_markup(url, desktop_body):
+                return desktop_body
+            desktop_error = SourceResponseError(
+                url,
+                status=200,
+                content_length=str(len(desktop_body)),
+                server="unknown",
+                transport="http",
+                fallback_error="response-shape-unrecognized",
+            )
+        except (SourceResponseError, HTTPError, OSError) as error:
+            desktop_error = error
+        return None
+
+    # The mobile route is the currently working public delivery path for
+    # DCInside. Other sources keep the historical HTTP-first behavior.
+    candidate = try_mobile() if is_dcinside_public_url(url) else try_desktop()
+    if candidate is not None:
+        return candidate
+    candidate = try_desktop() if is_dcinside_public_url(url) else try_mobile()
+    if candidate is not None:
+        return candidate
+
+    source_error = desktop_error or mobile_error
     try:
         browser_body = fetch_text_browser(url, max(timeout, 30.0), user_agent)
         if _has_expected_source_markup(url, browser_body):
@@ -242,18 +266,18 @@ def fetch_text_auto(url: str, timeout: float = 15.0, user_agent: str = DEFAULT_U
         fallback = str(browser_error)
         if mobile_error is not None:
             fallback = f"mobile={mobile_error}; browser={fallback}"
-        if isinstance(http_error, SourceResponseError):
+        if isinstance(source_error, SourceResponseError):
             raise SourceResponseError(
                 url,
-                status=http_error.status,
-                content_length=http_error.content_length,
-                server=http_error.server,
+                status=source_error.status,
+                content_length=source_error.content_length,
+                server=source_error.server,
                 transport="http+playwright",
                 fallback_error=fallback,
             ) from browser_error
         raise SourceResponseError(
             url,
-            status=getattr(http_error, "code", None),
+            status=getattr(source_error, "code", None),
             content_length=None,
             server=None,
             transport="http+playwright",

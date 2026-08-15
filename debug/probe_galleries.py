@@ -16,7 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from kaitori_collector.html import DCInsideHTMLParser, normalize_space
 from kaitori_collector.observability import inspect_source_response
-from kaitori_collector.parser import build_list_url, fetch_text
+from kaitori_collector.parser import build_list_url, fetch_text_auto
 
 
 def probe_gallery(gallery_id: str, subjects: tuple[str, ...], pages: int, limit: int) -> dict[str, object]:
@@ -24,7 +24,7 @@ def probe_gallery(gallery_id: str, subjects: tuple[str, ...], pages: int, limit:
     for page in range(1, pages + 1):
         url = build_list_url(gallery_id, page)
         try:
-            html = fetch_text(url)
+            html = fetch_text_auto(url)
             profile = inspect_source_response(html, url, expected="list")
             parser = DCInsideHTMLParser()
             parser.feed(html)
