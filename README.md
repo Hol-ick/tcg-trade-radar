@@ -12,11 +12,15 @@ debug\run-kaitori.bat
 
 ## 실제 수집 웹 콘솔
 
+GitHub Pages의 `Collector` 탭은 로컬 수집기를 직접 실행하는 기능이 아니라 데스크톱 앱 실행과 CSV 반영을 안내하는 화면입니다. 브라우저 보안상 방문자의 PC에서 EXE나 로컬 워커를 자동으로 시작할 수 없습니다.
+
 웹 화면의 `수집 시작` 버튼이 로컬 Python 워커의 `POST /jobs`를 호출합니다. 조회 기간은 기본 7일로 채워지며, 게임은 미리 등록된 5개 프리셋에서 고릅니다. 수집 중에는 단계별 로그와 결과를 화면에서 확인할 수 있습니다.
 
 디시인사이드 TCG 갤러리의 유저 거래 글을 모아 카드 거래 동향을 살펴보는 도구입니다.
 
 실제 수집에는 로컬 워커가 필요합니다. GitHub Pages는 정적 호스팅이므로 원본 게시판을 직접 수집하지 않습니다.
+
+현재 저장소에는 휴대형 `Collector.exe`가 없으며, 실제 데스크톱 실행 진입점은 [`debug/run-kaitori.bat`](debug/run-kaitori.bat)입니다. 가상환경의 `kaitori-collector.exe`는 Python 콘솔 스크립트 shim이므로 배포용 EXE로 간주하지 않습니다.
 
 ## 실행
 

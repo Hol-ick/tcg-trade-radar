@@ -7,6 +7,23 @@ export type MarketDataset = {
   loadedAt: string
 }
 
+export type MarketCatalogEntry = {
+  path: string
+  gameId: string
+  gameName: string
+  yearMonth: string
+  listingType: string
+  listingTypeLabel: string
+  rows: number
+  bytes: number
+  priceCandidateRows: number
+  strictPriceRows: number
+  minPostedAt: string
+  maxPostedAt: string
+}
+
+export const MARKET_CATALOG_ID = "market-20260814"
+
 const SELL_SIGNALS = /판매|팔아요|팝니다|파는|파는데|판매중|ㅍㅍ|ㅍㅇ|sell|selling/i
 const BUY_SIGNALS = /구매|구합니다|삽니다|찾습니다|구해요|매입|buy|wanted/i
 const TRADE_SIGNALS = /교환|트레이드|교환합니다|trade/i
@@ -29,7 +46,34 @@ export function parseMarketRows(records: Record<string, string>[], name: string)
 
 export function datasetUrl(fileName: string): string {
   const base = import.meta.env.BASE_URL.endsWith("/") ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`
-  return `${base}data/analysis/${encodeURIComponent(fileName)}`
+  const path = fileName.split("/").map((segment) => encodeURIComponent(segment)).join("/")
+  return `${base}data/analysis/${path}`
+}
+
+export function marketCatalogUrl(): string {
+  return datasetUrl(`${MARKET_CATALOG_ID}/index/partitions.csv`)
+}
+
+export function parsePartitionCatalog(text: string): MarketCatalogEntry[] {
+  const records = parseCsvRecords(text)
+  const headers = records[0] || []
+  return records.slice(1).map((values) => {
+    const record = Object.fromEntries(headers.map((header, column) => [header.trim(), values[column] ?? ""]))
+    return {
+      path: String(record.path || "").trim(),
+      gameId: String(record.game_id || "").trim(),
+      gameName: String(record.game_name || record.game_id || "").trim(),
+      yearMonth: String(record.year_month || "").trim(),
+      listingType: String(record.listing_type || "").trim(),
+      listingTypeLabel: String(record.listing_type_label || record.listing_type || "").trim(),
+      rows: catalogNumber(record.rows),
+      bytes: catalogNumber(record.bytes),
+      priceCandidateRows: catalogNumber(record.price_candidate_rows),
+      strictPriceRows: catalogNumber(record.strict_price_rows),
+      minPostedAt: String(record.min_posted_at || "").trim(),
+      maxPostedAt: String(record.max_posted_at || "").trim(),
+    }
+  }).filter((entry) => Boolean(entry.path && entry.gameId && entry.yearMonth))
 }
 
 export function normalizeCardName(value: string): string {
@@ -89,6 +133,11 @@ function first(record: Record<string, string>, ...keys: string[]): string {
 function positiveNumber(value: string): number | null {
   const parsed = Number(String(value).replaceAll(",", "").replace(/원$/, "").trim())
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function catalogNumber(value: unknown): number {
+  const parsed = Number(String(value ?? "").replaceAll(",", "").trim())
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 function normalizeIntent(value: string, context: string): MarketIntent {

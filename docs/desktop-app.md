@@ -2,6 +2,8 @@
 
 실제 수집은 이 앱 내부에서 직접 실행됩니다. 별도의 워커 주소, 브라우저 프록시, GitHub Pages 연결은 필요하지 않습니다.
 
+현재 저장소에는 휴대형 `Collector.exe`가 포함되어 있지 않습니다. `debug\run-kaitori.bat`가 Python 환경의 PySide6 데스크톱 앱을 실행하며, GitHub Pages의 Collector 탭은 이 로컬 실행 절차와 CSV 반영 흐름을 안내합니다.
+
 ## 실행
 
 프로젝트 폴더에서 다음 파일을 실행합니다.

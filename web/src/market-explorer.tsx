@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent,
 import { Activity, ArrowUpRight, BarChart3, Database, FileUp, LayoutDashboard, Search, Table2, UploadCloud, Users, X } from "lucide-react"
 
 import { PriceTrendChart, SupplyDemandChart } from "@/components/market-charts"
-import { datasetUrl, parseMarketCsv, type MarketDataset } from "@/lib/market-data"
+import { datasetUrl, marketCatalogUrl, MARKET_CATALOG_ID, parseMarketCsv, parsePartitionCatalog, type MarketCatalogEntry, type MarketDataset } from "@/lib/market-data"
 import type { MarketIntent, MarketQuality, MarketRow } from "@/lib/types"
 
 const SAMPLE_FILES = [
@@ -10,12 +10,16 @@ const SAMPLE_FILES = [
   { file: "tcggame-live-20260812.csv", label: "TCGgame · 실시간 1행" },
 ]
 
+type DatasetOption = { file: string; label: string; source: "sample" | "git" }
+
 type IntentFilter = MarketIntent | "all"
 type QualityFilter = MarketQuality | "all"
 
 export function MarketExplorer() {
   const [dataset, setDataset] = useState<MarketDataset | null>(null)
   const [loadError, setLoadError] = useState("")
+  const [catalog, setCatalog] = useState<MarketCatalogEntry[]>([])
+  const [catalogError, setCatalogError] = useState("")
   const [query, setQuery] = useState("")
   const [intent, setIntent] = useState<IntentFilter>("all")
   const [quality, setQuality] = useState<QualityFilter>("all")
@@ -42,6 +46,14 @@ export function MarketExplorer() {
     }).catch((error) => {
       if (!cancelled) setLoadError(error instanceof Error ? error.message : "CSV를 불러오지 못했습니다")
     })
+    void fetch(marketCatalogUrl(), { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) throw new Error(`GitHub CSV 카탈로그를 불러오지 못했습니다 (${response.status})`)
+      return parsePartitionCatalog(await response.text())
+    }).then((entries) => {
+      if (!cancelled) setCatalog(entries)
+    }).catch((error) => {
+      if (!cancelled) setCatalogError(error instanceof Error ? error.message : "GitHub CSV 카탈로그를 불러오지 못했습니다")
+    })
     return () => { cancelled = true }
   }, [])
 
@@ -61,7 +73,12 @@ export function MarketExplorer() {
   const summary = useMemo(() => summarize(filteredRows), [filteredRows])
   const dateRange = useMemo(() => getDateRange(dataset?.rows || []), [dataset])
   const hasFilters = Boolean(query || intent !== "all" || quality !== "all" || since || until)
-  const isBundledSample = Boolean(dataset && SAMPLE_FILES.some((sample) => sample.file === dataset.name))
+  const datasetOptions = useMemo<DatasetOption[]>(() => [
+    ...SAMPLE_FILES.map((sample) => ({ ...sample, source: "sample" as const })),
+    ...catalog.map((entry) => ({ file: `${MARKET_CATALOG_ID}/${entry.path}`, label: `Git · ${entry.gameName} · ${entry.yearMonth} · ${entry.listingTypeLabel} · ${entry.rows.toLocaleString("ko-KR")}행`, source: "git" as const })),
+  ], [catalog])
+  const selectedOption = datasetOptions.find((option) => option.file === dataset?.name)
+  const sourceLabel = selectedOption?.source === "git" ? "GitHub CSV" : selectedOption?.source === "sample" ? "Bundled sample" : "Uploaded CSV"
   const openFilePicker = () => fileInput.current?.click()
 
   const handleFiles = (files: FileList | null) => {
@@ -108,7 +125,7 @@ export function MarketExplorer() {
       <div className="sidebar-section-label">Data source</div>
       <div className="sidebar-source">
         <span className="source-icon"><Database size={15} /></span>
-        <span><strong>{dataset?.name || "Loading CSV"}</strong><small>{dataset ? `${isBundledSample ? "Bundled sample · " : "Uploaded CSV · "}${dataset.rows.length.toLocaleString("ko-KR")} rows` : "Preparing workspace"}</small></span>
+        <span><strong>{dataset?.name || "Loading CSV"}</strong><small>{dataset ? `${sourceLabel} · ${dataset.rows.length.toLocaleString("ko-KR")} rows` : "Preparing workspace"}</small></span>
       </div>
       <div className="sidebar-spacer" />
       <div className="sidebar-workspace"><span>TCG</span><span><strong>Personal workspace</strong><small>CSV market analysis</small></span></div>
@@ -117,7 +134,7 @@ export function MarketExplorer() {
     <section className="saas-main">
       <header className="saas-header">
         <div className="breadcrumbs"><span>Workspace</span><span>/</span><strong>Market explorer</strong></div>
-        <div className="header-actions"><span className="connection-pill"><i />Local CSV mode</span><a className="header-collector-link" href="?page=collector">Open collector <ArrowUpRight size={14} /></a></div>
+        <div className="header-actions"><span className="connection-pill"><i />GitHub CSV + local file</span><a className="header-collector-link" href="?page=collector">Open collector <ArrowUpRight size={14} /></a></div>
       </header>
 
       <div className="saas-content">
@@ -127,9 +144,10 @@ export function MarketExplorer() {
         </section>
 
         <section className="source-card" aria-label="데이터 소스">
-          <div className="source-card-main"><span className="source-avatar"><Database size={17} /></span><span><small>{dataset ? (isBundledSample ? "Bundled sample" : "Uploaded CSV") : "Current dataset"}</small><strong>{dataset?.name || "CSV 준비 중"}</strong><em>{dataset ? `${dataset.rows.length.toLocaleString("ko-KR")} rows · ${dataset.headers.length} columns` : "Loading data"}</em></span></div>
-          <div className="source-card-actions"><select aria-label="샘플 CSV 선택" value={dataset?.name || SAMPLE_FILES[0].file} onChange={(event) => void loadSample(event.target.value)}>{SAMPLE_FILES.map((sample) => <option key={sample.file} value={sample.file}>{sample.label}</option>)}</select><button className={`button button-secondary ${isDragging ? "dragging" : ""}`} type="button" onClick={openFilePicker} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={onDrop}><FileUp size={15} />Choose file</button><input ref={fileInput} className="sr-only" type="file" accept=".csv,text/csv" onChange={(event: ChangeEvent<HTMLInputElement>) => handleFiles(event.target.files)} /></div>
+          <div className="source-card-main"><span className="source-avatar"><Database size={17} /></span><span><small>{dataset ? sourceLabel : "Current dataset"}</small><strong>{dataset?.name || "CSV 준비 중"}</strong><em>{dataset ? `${dataset.rows.length.toLocaleString("ko-KR")} rows · ${dataset.headers.length} columns` : "Loading data"}</em></span></div>
+          <div className="source-card-actions"><select aria-label="GitHub 또는 샘플 CSV 선택" value={dataset?.name || SAMPLE_FILES[0].file} onChange={(event) => void loadSample(event.target.value)}><optgroup label="Bundled samples">{datasetOptions.filter((option) => option.source === "sample").map((option) => <option key={option.file} value={option.file}>{option.label}</option>)}</optgroup>{catalog.length > 0 && <optgroup label={`GitHub CSV · ${catalog.length} partitions`}>{datasetOptions.filter((option) => option.source === "git").map((option) => <option key={option.file} value={option.file}>{option.label}</option>)}</optgroup>}</select><button className={`button button-secondary ${isDragging ? "dragging" : ""}`} type="button" onClick={openFilePicker} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={onDrop}><FileUp size={15} />Choose file</button><input ref={fileInput} className="sr-only" type="file" accept=".csv,text/csv" onChange={(event: ChangeEvent<HTMLInputElement>) => handleFiles(event.target.files)} /></div>
         </section>
+        {catalogError && <div className="catalog-status" role="status">{catalogError} · 샘플 CSV와 로컬 파일은 계속 사용할 수 있습니다.</div>}
         {loadError && <div className="explorer-error" role="alert">{loadError}</div>}
 
         <section className="filter-card" aria-label="시장 데이터 필터">
