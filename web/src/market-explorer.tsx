@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type MouseEvent, type ReactNode } from "react"
 import { Activity, ArrowUpRight, BarChart3, Database, FileUp, LayoutDashboard, Search, Table2, UploadCloud, Users, X } from "lucide-react"
 
 import { PriceTrendChart, SupplyDemandChart } from "@/components/market-charts"
@@ -26,6 +26,7 @@ export function MarketExplorer() {
   const [since, setSince] = useState("")
   const [until, setUntil] = useState("")
   const [isDragging, setIsDragging] = useState(false)
+  const [selectedCardKey, setSelectedCardKey] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const loadSample = async (fileName: string) => {
@@ -34,6 +35,7 @@ export function MarketExplorer() {
       const response = await fetch(datasetUrl(fileName), { cache: "no-store" })
       if (!response.ok) throw new Error(`샘플 CSV를 불러오지 못했습니다 (${response.status})`)
       setDataset(parseMarketCsv(await response.text(), fileName))
+      setSelectedCardKey(null)
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "CSV를 불러오지 못했습니다")
     }
@@ -71,6 +73,7 @@ export function MarketExplorer() {
   }, [dataset, intent, quality, query, since, until])
 
   const signalRows = useMemo(() => quality === "excluded" ? filteredRows : filteredRows.filter((row) => row.quality !== "excluded"), [filteredRows, quality])
+  const selectedRows = useMemo(() => selectedCardKey ? signalRows.filter((row) => row.cardKey === selectedCardKey) : [], [selectedCardKey, signalRows])
   const summary = useMemo(() => summarize(signalRows), [signalRows])
   const dateRange = useMemo(() => getDateRange(dataset?.rows || []), [dataset])
   const hasFilters = Boolean(query || intent !== "all" || quality !== "all" || since || until)
@@ -88,7 +91,7 @@ export function MarketExplorer() {
     setLoadError("")
     const reader = new FileReader()
     reader.onload = () => {
-      try { setDataset(parseMarketCsv(String(reader.result || ""), file.name)) } catch { setLoadError("CSV 형식을 읽지 못했습니다") }
+      try { setDataset(parseMarketCsv(String(reader.result || ""), file.name)); setSelectedCardKey(null) } catch { setLoadError("CSV 형식을 읽지 못했습니다") }
     }
     reader.onerror = () => setLoadError("파일을 읽지 못했습니다")
     reader.readAsText(file, "utf-8")
@@ -106,6 +109,7 @@ export function MarketExplorer() {
     setQuality("all")
     setSince("")
     setUntil("")
+    setSelectedCardKey(null)
   }
 
   return <main className="explorer-shell">
@@ -154,10 +158,10 @@ export function MarketExplorer() {
         <section className="filter-card" aria-label="시장 데이터 필터">
           <div className="filter-card-header"><div><span className="eyebrow">FILTERS</span><h2>Refine this view</h2></div>{hasFilters && <button className="clear-button" type="button" onClick={resetFilters}><X size={14} />Clear filters</button>}</div>
           <div className="filter-controls">
-            <label className="saas-field search-control" htmlFor="market-search"><span>Search</span><div><Search size={15} /><input id="market-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Card, seller, or post title" /><kbd>/</kbd></div></label>
-            <div className="saas-field"><span>Listing type</span><div className="intent-tabs">{(["all", "sell", "buy", "trade"] as IntentFilter[]).map((value) => <button key={value} className={intent === value ? "active" : ""} type="button" onClick={() => setIntent(value)}>{intentLabel(value)}</button>)}</div></div>
-            <label className="saas-field" htmlFor="quality-filter"><span>Data quality</span><select id="quality-filter" value={quality} onChange={(event) => setQuality(event.target.value as QualityFilter)}><option value="all">All quality levels</option><option value="usable">Analysis ready</option><option value="needs_review">Needs review</option><option value="context_only">Context only</option><option value="excluded">Excluded</option></select></label>
-            <div className="saas-field date-controls"><span>Date range</span><div><input id="date-since" aria-label="시작일" type="date" value={since} min={dateRange.min} max={dateRange.max} onChange={(event) => setSince(event.target.value)} /><span>to</span><input id="date-until" aria-label="종료일" type="date" value={until} min={dateRange.min} max={dateRange.max} onChange={(event) => setUntil(event.target.value)} /></div></div>
+            <label className="saas-field search-control" htmlFor="market-search"><span>Search</span><div><Search size={15} /><input id="market-search" value={query} onChange={(event) => { setQuery(event.target.value); setSelectedCardKey(null) }} placeholder="Card, seller, or post title" /><kbd>/</kbd></div></label>
+            <div className="saas-field"><span>Listing type</span><div className="intent-tabs">{(["all", "sell", "buy", "trade"] as IntentFilter[]).map((value) => <button key={value} className={intent === value ? "active" : ""} type="button" onClick={() => { setIntent(value); setSelectedCardKey(null) }}>{intentLabel(value)}</button>)}</div></div>
+            <label className="saas-field" htmlFor="quality-filter"><span>Data quality</span><select id="quality-filter" value={quality} onChange={(event) => { setQuality(event.target.value as QualityFilter); setSelectedCardKey(null) }}><option value="all">All quality levels</option><option value="usable">Analysis ready</option><option value="needs_review">Needs review</option><option value="context_only">Context only</option><option value="excluded">Excluded</option></select></label>
+            <div className="saas-field date-controls"><span>Date range</span><div><input id="date-since" aria-label="시작일" type="date" value={since} min={dateRange.min} max={dateRange.max} onChange={(event) => { setSince(event.target.value); setSelectedCardKey(null) }} /><span>to</span><input id="date-until" aria-label="종료일" type="date" value={until} min={dateRange.min} max={dateRange.max} onChange={(event) => { setUntil(event.target.value); setSelectedCardKey(null) }} /></div></div>
           </div>
           <div className="filter-footer"><span>{filteredRows.length.toLocaleString("ko-KR")} of {(dataset?.rows.length || 0).toLocaleString("ko-KR")} observations shown</span><span>Price-less rows remain available for volume analysis</span></div>
         </section>
@@ -171,9 +175,10 @@ export function MarketExplorer() {
 
         <div className="section-heading"><div><span className="eyebrow">ANALYTICS</span><h2>Market signals</h2></div><span className="section-meta">Updated from current dataset</span></div>
         <div className="charts-grid"><PriceTrendChart rows={signalRows} /><SupplyDemandChart rows={signalRows} /></div>
-        <CardTable rows={signalRows} />
+        <CardTable rows={signalRows} onSelect={setSelectedCardKey} />
       </div>
     </section>
+    {selectedRows.length > 0 && <CardDetailModal rows={selectedRows} onClose={() => setSelectedCardKey(null)} />}
   </main>
 }
 
@@ -187,11 +192,23 @@ function Metric({ icon, label, value, detail, tone }: { icon: ReactNode; label: 
   return <article className={`metric-card ${tone}`}><div className="metric-icon">{icon}</div><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>
 }
 
-function CardTable({ rows }: { rows: MarketRow[] }) {
+type CardGroup = {
+  cardKey: string
+  name: string
+  count: number
+  supply: number
+  demand: number
+  unknown: number
+  prices: number[]
+  sellers: Set<string>
+  date: string
+}
+
+function CardTable({ rows, onSelect }: { rows: MarketRow[]; onSelect: (cardKey: string) => void }) {
   const groups = useMemo(() => {
-    const grouped = new Map<string, { name: string; count: number; supply: number; demand: number; unknown: number; prices: number[]; sellers: Set<string>; date: string }>()
+    const grouped = new Map<string, CardGroup>()
     for (const row of rows) {
-      const current = grouped.get(row.cardKey) || { name: row.cardName, count: 0, supply: 0, demand: 0, unknown: 0, prices: [], sellers: new Set<string>(), date: "" }
+      const current = grouped.get(row.cardKey) || { cardKey: row.cardKey, name: row.cardName, count: 0, supply: 0, demand: 0, unknown: 0, prices: [], sellers: new Set<string>(), date: "" }
       current.count += 1
       if (row.listingType === "sell") current.supply += 1
       else if (row.listingType === "buy") current.demand += 1
@@ -203,8 +220,80 @@ function CardTable({ rows }: { rows: MarketRow[] }) {
     }
     return [...grouped.values()].sort((left, right) => (right.supply + right.demand) - (left.supply + left.demand) || right.count - left.count).slice(0, 12)
   }, [rows])
-  return <section className="table-card" id="signals"><div className="table-card-header"><div><span className="eyebrow">CARD SIGNALS</span><h2>Card-level market signals</h2></div><span className="table-count">{groups.length} cards shown</span></div>{groups.length === 0 ? <div className="chart-empty">현재 필터에 맞는 카드가 없습니다.</div> : <div className="card-table-wrap"><table><thead><tr><th>Card</th><th>Supply</th><th>Demand</th><th>Unclassified</th><th>Observed median</th><th>Sellers</th><th>Last posted</th></tr></thead><tbody>{groups.map((group) => <tr key={group.name}><td><strong>{group.name}</strong><small>{group.count} observations</small></td><td><span className="table-number supply-text">{group.supply}</span></td><td><span className="table-number demand-text">{group.demand}</span></td><td><span className="table-number unknown-text">{group.unknown || "—"}</span></td><td>{group.prices.length ? `${Math.round(median(group.prices)).toLocaleString("ko-KR")}원` : "—"}</td><td>{group.sellers.size}</td><td>{group.date ? group.date.replaceAll("-", ".") : "—"}</td></tr>)}</tbody></table></div>}<div className="table-card-footer"><span>Top 12 cards by classified activity and observations</span><span>{rows.length.toLocaleString("ko-KR")} total observations</span></div></section>
+  return <section className="table-card" id="signals"><div className="table-card-header"><div><span className="eyebrow">CARD SIGNALS</span><h2>Card-level market signals</h2></div><span className="table-count">{groups.length} cards shown</span></div>{groups.length === 0 ? <div className="chart-empty">현재 필터에 맞는 카드가 없습니다.</div> : <div className="card-table-wrap"><table><thead><tr><th>Card</th><th>Supply</th><th>Demand</th><th>Unclassified</th><th>Observed median</th><th>Sellers</th><th>Last posted</th></tr></thead><tbody>{groups.map((group) => <tr key={group.cardKey} className="card-table-row" tabIndex={0} role="button" aria-label={`${group.name} 상세 보기`} onClick={() => onSelect(group.cardKey)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(group.cardKey) } }}><td><strong>{group.name}</strong><small>{group.count} observations · 상세 보기</small></td><td><span className="table-number supply-text">{group.supply}</span></td><td><span className="table-number demand-text">{group.demand}</span></td><td><span className="table-number unknown-text">{group.unknown || "—"}</span></td><td>{group.prices.length ? `${Math.round(median(group.prices)).toLocaleString("ko-KR")}원` : "—"}</td><td>{group.sellers.size}</td><td>{group.date ? group.date.replaceAll("-", ".") : "—"}</td></tr>)}</tbody></table></div>}<div className="table-card-footer"><span>Top 12 cards by classified activity and observations</span><span>{rows.length.toLocaleString("ko-KR")} total observations</span></div></section>
 }
+
+function CardDetailModal({ rows, onClose }: { rows: MarketRow[]; onClose: () => void }) {
+  const closeButton = useRef<HTMLButtonElement>(null)
+  const sortedRows = useMemo(() => [...rows].sort((left, right) => `${right.dateKey}${right.postedAt}`.localeCompare(`${left.dateKey}${left.postedAt}`)), [rows])
+  const recentRows = useMemo(() => {
+    const seen = new Set<string>()
+    return sortedRows.filter((row) => {
+      const key = [row.postUrl || row.id, row.priceKrw ?? "", row.quantity, row.sellerName, row.listingType].join("|")
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [sortedRows])
+  const pricedRows = useMemo(() => rows.filter((row) => row.priceKrw != null && row.priceScope === "per_card"), [rows])
+  const cardName = rows[0]?.cardName || rows[0]?.cardKey || "선택한 카드"
+  const prices = pricedRows.map((row) => row.priceKrw as number)
+  const latestPrice = sortedRows.find((row) => row.priceKrw != null && row.priceScope === "per_card")?.priceKrw ?? null
+  const sellers = new Set(rows.map((row) => row.sellerName).filter(Boolean)).size
+  const supply = rows.filter((row) => row.listingType === "sell")
+  const demand = rows.filter((row) => row.listingType === "buy")
+
+  useEffect(() => {
+    closeButton.current?.focus()
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose() }
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener("keydown", onKeyDown)
+    }
+  }, [onClose])
+
+  const closeOnBackdrop = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) onClose()
+  }
+
+  return <div className="modal-backdrop" role="presentation" onMouseDown={closeOnBackdrop}>
+    <section className="card-detail-modal" role="dialog" aria-modal="true" aria-labelledby="card-detail-title" onMouseDown={(event) => event.stopPropagation()}>
+      <header className="card-detail-header">
+        <div>
+          <span className="eyebrow">CARD DETAIL</span>
+          <h2 id="card-detail-title">{cardName}</h2>
+          <p>{rows[0]?.cardKey || "카드 키 없음"}</p>
+        </div>
+        <button ref={closeButton} className="modal-close-button" type="button" aria-label="카드 상세 닫기" onClick={onClose}><X size={18} /></button>
+      </header>
+
+      <div className="detail-stat-grid" aria-label="카드 요약">
+        <DetailStat label="관측" value={rows.length.toLocaleString("ko-KR")} detail="현재 필터 기준" tone="blue" />
+        <DetailStat label="최근 가격" value={formatPrice(latestPrice)} detail={`${pricedRows.length.toLocaleString("ko-KR")}개 가격 확인`} tone="violet" />
+        <DetailStat label="판매 / 구매" value={`${supply.length} / ${demand.length}`} detail={`수량 ${quantityOf(supply)} / ${quantityOf(demand)}`} tone="green" />
+        <DetailStat label="판매자" value={sellers.toLocaleString("ko-KR")} detail={prices.length ? `가격 범위 ${formatPrice(Math.min(...prices))}–${formatPrice(Math.max(...prices))}` : "가격 확인 가능한 관측 없음"} tone="amber" />
+      </div>
+
+      <div className="card-detail-chart"><PriceTrendChart rows={rows} /></div>
+
+      <section className="recent-observations" aria-labelledby="recent-observations-title">
+        <div className="detail-section-heading"><div><span className="eyebrow">RECENT OBSERVATIONS</span><h3 id="recent-observations-title">최근 거래글</h3></div><span>{Math.min(recentRows.length, 8)} / {recentRows.length}</span></div>
+        {recentRows.length === 0 ? <div className="detail-empty">관측 데이터가 없습니다.</div> : <div className="detail-observations-wrap"><table><thead><tr><th>날짜</th><th>구분</th><th>가격</th><th>수량</th><th>작성자</th><th>원문</th></tr></thead><tbody>{recentRows.slice(0, 8).map((row) => <tr key={`${row.id}-${row.postUrl}`}><td>{formatDate(row.dateKey || row.postedAt)}</td><td><span className={`detail-intent ${row.listingType}`}>{intentLabel(row.listingType)}</span></td><td>{formatPrice(row.priceKrw)}{row.priceScope !== "per_card" && row.priceKrw != null ? <small className="detail-price-scope">{row.priceScope === "bundle" ? "묶음" : "수량 기준"}</small> : null}</td><td>{row.quantity.toLocaleString("ko-KR")}</td><td>{row.sellerName || "—"}</td><td>{row.postUrl ? <a href={row.postUrl} target="_blank" rel="noreferrer">열기 <ArrowUpRight size={12} /></a> : "—"}</td></tr>)}</tbody></table></div>}
+      </section>
+    </section>
+  </div>
+}
+
+function DetailStat({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: string }) {
+  return <article className={`detail-stat ${tone}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>
+}
+
+function quantityOf(rows: MarketRow[]) { return rows.reduce((total, row) => total + row.quantity, 0).toLocaleString("ko-KR") }
+function formatPrice(value: number | null) { return value == null ? "—" : `${Math.round(value).toLocaleString("ko-KR")}원` }
+function formatDate(value: string) { return value ? value.slice(0, 10).replaceAll("-", ".") : "—" }
 
 function summarize(rows: MarketRow[]) {
   const prices = rows.filter((row) => row.priceKrw != null && row.priceScope === "per_card")
