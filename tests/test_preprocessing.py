@@ -1,6 +1,6 @@
 import unittest
 
-from kaitori_collector.preprocessing import analysis_status, classify_post, classify_price
+from kaitori_collector.preprocessing import analysis_status, classify_post, classify_price, is_likely_artifact
 
 
 class PreprocessingTests(unittest.TestCase):
@@ -27,6 +27,25 @@ class PreprocessingTests(unittest.TestCase):
         self.assertEqual(analysis_status(post_status="active", listing_type="sell", card_name="블루아이즈", price_status="estimated", price_scope="per_card"), "needs_review")
         self.assertEqual(analysis_status(post_status="active", listing_type="sell", card_name="블루아이즈", price_status="missing", price_scope="unknown"), "needs_review")
         self.assertEqual(analysis_status(post_status="completed", listing_type="sell", card_name="블루아이즈", price_status="exact", price_scope="per_card"), "context_only")
+
+    def test_script_and_ad_fragments_are_excluded_from_market_analysis(self):
+        self.assertTrue(is_likely_artifact("loadScript('https://pagead.example/ad.js')"))
+        self.assertTrue(is_likely_artifact("DOM 삽입 헬퍼 현재 스크립트 위치 기준"))
+        self.assertTrue(is_likely_artifact("등포"))
+        self.assertTrue(is_likely_artifact("한 장"))
+        self.assertTrue(is_likely_artifact("일괄시"))
+        self.assertTrue(is_likely_artifact("준등포 2만"))
+        self.assertTrue(is_likely_artifact("1.5 0.5 1.0"))
+        self.assertEqual(
+            analysis_status(
+                post_status="active",
+                listing_type="sell",
+                card_name="var safe = window.dcAd && window.dcAd.safe ==",
+                price_status="exact",
+                price_scope="per_card",
+            ),
+            "excluded",
+        )
 
 
 if __name__ == "__main__":

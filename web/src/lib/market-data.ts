@@ -27,6 +27,13 @@ export const MARKET_CATALOG_ID = "market-20260814"
 const SELL_SIGNALS = /판매|팔아요|팝니다|파는|파는데|판매중|ㅍㅍ|ㅍㅇ|sell|selling/i
 const BUY_SIGNALS = /구매|구합니다|삽니다|찾습니다|구해요|매입|buy|wanted/i
 const TRADE_SIGNALS = /교환|트레이드|교환합니다|trade/i
+const TRADE_WORDS = /(?:\b(?:sell|buy|trade|wanted|selling|buying)\b|판매합니다|판매|팝니다|팜|삽니다|구매합니다|구매|구합니다|구해요|구함|찾습니다|찾아요|찾음|교환합니다|교환|파는\s*사람|사는\s*사람)/gi
+const QUANTITY_NOISE = /(?<![A-Za-z가-힣])\d+\s*(?:장|매|개|통|세트)(?:분)?(?![A-Za-z가-힣])/gi
+const PER_UNIT_NOISE = /(?:장|매|개|통)\s*당(?![A-Za-z가-힣])|한\s*장(?![A-Za-z가-힣])/gi
+const PRICE_NOISE = /(?<![A-Za-z가-힣0-9.-])\d[\d,]*(?:\.\d+)?\s*(?:원|만원|만)?(?=$|[^A-Za-z가-힣0-9])/gi
+const SHIPPING_NOISE = /(?:준등포|준등기|등포|등기|택포|택배포함|배송비\s*포함|직거래)/gi
+const ARTIFACT_CARD_TEXT = /(?:https?:\/\/|javascript\s*:|<\/?script\b|loadscript\b|adsbygoogle|googlesyndication|(?:window|document)\s*[.[]|queryselector\s*\(|appendchild\s*\(|\b(?:var|const|let)\s+\w+\s*=|function\s*\(|DOM\s*삽입|스크립트|광고\s*삽입)/i
+const NON_CARD_LABEL = /^(?:(?:\d+\s*)?(?:장|매|개|통)(?:분)?|한\s*장|(?:장|매|개|통)\s*당|준등포|준등기|등포|등기|택포|반택포|편택포|배송|배송비|가격|합계|총액|일괄\s*(?:시|판매|구매)?|구매|판매|교환|\d+(?:[.,]\d+)?(?:\s+\d+(?:[.,]\d+)?)+)$/i
 
 export function parseMarketCsv(text: string, name: string): MarketDataset {
   const records = parseCsvRecords(text)
@@ -78,28 +85,35 @@ export function parsePartitionCatalog(text: string): MarketCatalogEntry[] {
 
 export function normalizeCardName(value: string): string {
   return value
-    .replace(/\b(?:sell|buy|trade|wanted)\b/gi, " ")
-    .replace(/(?:장당|매당|개당|통당|한장|준등포|준등기|택포|택배포함|배송비 포함|직거래)/g, " ")
-    .replace(/\d[\d,.]*\s*(?:만원|만|원)?/g, " ")
+    .replace(TRADE_WORDS, " ")
+    .replace(QUANTITY_NOISE, " ")
+    .replace(PER_UNIT_NOISE, " ")
+    .replace(SHIPPING_NOISE, " ")
+    .replace(PRICE_NOISE, " ")
     .replace(/[()[\]{}\\/:,;|]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
+    .replace(/^[\s\-._~]+|[\s\-._~]+$/g, "")
 }
 
 function normalizeMarketRow(record: Record<string, string>, id: string): MarketRow | null {
-  const cardName = first(record, "card_name", "card_name_raw", "card", "name") || normalizeCardName(first(record, "raw_line", "post_title"))
   const title = first(record, "post_title", "title")
   const rawLine = first(record, "raw_line")
+  const sourceCardName = first(record, "card_name_normalized", "card_name", "card_name_raw", "card", "name")
+  const candidateCardName = sourceCardName || rawLine || title
+  const normalizedCardName = normalizeCardName(candidateCardName)
+  const cardName = normalizedCardName || (sourceCardName && !NON_CARD_LABEL.test(sourceCardName) ? sourceCardName : "이름 미확인")
   const postedAt = first(record, "posted_at", "date", "created_at")
   const dateKey = postedAt.slice(0, 10)
   const priceKrw = positiveNumber(first(record, "price_krw_observed", "price_krw", "buy_price_krw"))
   const quantity = Math.max(1, Math.round(positiveNumber(first(record, "quantity")) || 1))
   const listingType = normalizeIntent(first(record, "listing_type"), `${title} ${rawLine}`)
   const reviewStatus = first(record, "review_status", "status") || "unknown"
-  const quality = normalizeQuality(first(record, "analysis_status"), reviewStatus, priceKrw)
+  const quality = isLikelyArtifact(sourceCardName, rawLine, normalizedCardName) || !normalizedCardName ? "excluded" : normalizeQuality(first(record, "analysis_status"), reviewStatus, priceKrw)
   const priceStatus = normalizePriceStatus(first(record, "price_status"), first(record, "price_unit"), priceKrw)
   const priceScope = normalizePriceScope(first(record, "price_scope"), quantity, rawLine)
-  const cardKey = normalizeCardName(cardName).toLocaleLowerCase("ko-KR") || cardName.trim().toLocaleLowerCase("ko-KR")
+  const canonicalCardKey = first(record, "card_key").toLocaleLowerCase("ko-KR")
+  const cardKey = canonicalCardKey || normalizeCardName(sourceCardName || rawLine || title).toLocaleLowerCase("ko-KR")
   if (!cardKey && !title) return null
   return {
     id: first(record, "row_id", "id") || id,
@@ -164,9 +178,13 @@ function normalizePriceStatus(value: string, unit: string, price: number | null)
 
 function normalizePriceScope(value: string, quantity: number, rawLine: string): MarketRow["priceScope"] {
   if (["per_card", "per_quantity", "bundle", "unknown"].includes(value)) return value as MarketRow["priceScope"]
-  if (/[+,/&]/.test(rawLine)) return "bundle"
-  if (quantity > 1 && !/장당|매당|개당/.test(rawLine)) return "per_quantity"
+  if (/일괄|세트|전부|구성|소스|덱|[+,/&]|\s(?:및|외)\s/.test(rawLine)) return "bundle"
+  if (quantity > 1 && !/(?:장|매|개|통)\s*당/.test(rawLine)) return "per_quantity"
   return "per_card"
+}
+
+function isLikelyArtifact(...values: string[]): boolean {
+  return values.some((value) => ARTIFACT_CARD_TEXT.test(value) || NON_CARD_LABEL.test(value.trim()))
 }
 
 function parseCsvRecords(text: string): string[][] {

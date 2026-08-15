@@ -20,7 +20,7 @@ def _write_input(path: Path) -> None:
             "gallery_id": "tcggame", "source_id": "source-1", "row_id": "row-1", "post_id": "post-1",
             "posted_at": "2026-07-04T10:00:00+09:00", "date_quality": "known", "post_url": "https://example/1",
             "post_title": "블루아이즈 판매", "seller_id": "seller-1", "seller_name": "판매자1", "author_type": "registered",
-            "card_key": "blue-eyes", "card_name_raw": "블루아이즈", "card_name_normalized": "블루아이즈", "card_code": "",
+            "card_key": "canonical-blue-eyes", "card_name_raw": "블루아이즈", "card_name_normalized": "블루아이즈", "card_code": "",
             "rarity": "", "listing_type": "sell", "quantity": "2", "raw_price": "10000",
             "price_krw_observed": "10000", "price_status": "exact", "price_scope": "per_card", "price_origin": "text",
             "shipping_included": "unknown", "shipping_price_krw": "", "post_status": "active", "analysis_status": "usable",
@@ -82,6 +82,7 @@ def test_export_creates_one_partition_per_observation(tmp_path: Path):
     for partition in partitions:
         rows.extend(_read_csv(output / partition["path"]))
     assert {row["observation_id"] for row in rows} == {"row-1", "row-2", "row-3"}
+    assert next(row for row in rows if row["observation_id"] == "row-1")["card_key"] == "canonical-blue-eyes"
     assert {row["year_month"] for row in rows} == {"2026-07", "unknown-date"}
 
 

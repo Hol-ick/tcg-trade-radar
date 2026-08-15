@@ -61,7 +61,7 @@ export function MarketExplorer() {
     if (!dataset) return []
     const needle = query.trim().toLocaleLowerCase("ko-KR")
     return dataset.rows.filter((row) => {
-      const matchesQuery = !needle || [row.cardName, row.sellerName, row.title, row.rawLine].some((value) => value.toLocaleLowerCase("ko-KR").includes(needle))
+      const matchesQuery = !needle || [row.cardKey, row.cardName, row.sellerName, row.title, row.rawLine].some((value) => value.toLocaleLowerCase("ko-KR").includes(needle))
       const matchesIntent = intent === "all" || row.listingType === intent
       const matchesQuality = quality === "all" || row.quality === quality
       const matchesSince = !since || (row.dateKey && row.dateKey >= since)
@@ -70,7 +70,8 @@ export function MarketExplorer() {
     })
   }, [dataset, intent, quality, query, since, until])
 
-  const summary = useMemo(() => summarize(filteredRows), [filteredRows])
+  const signalRows = useMemo(() => quality === "excluded" ? filteredRows : filteredRows.filter((row) => row.quality !== "excluded"), [filteredRows, quality])
+  const summary = useMemo(() => summarize(signalRows), [signalRows])
   const dateRange = useMemo(() => getDateRange(dataset?.rows || []), [dataset])
   const hasFilters = Boolean(query || intent !== "all" || quality !== "all" || since || until)
   const datasetOptions = useMemo<DatasetOption[]>(() => [
@@ -169,8 +170,8 @@ export function MarketExplorer() {
         </section>
 
         <div className="section-heading"><div><span className="eyebrow">ANALYTICS</span><h2>Market signals</h2></div><span className="section-meta">Updated from current dataset</span></div>
-        <div className="charts-grid"><PriceTrendChart rows={filteredRows} /><SupplyDemandChart rows={filteredRows} /></div>
-        <CardTable rows={filteredRows} />
+        <div className="charts-grid"><PriceTrendChart rows={signalRows} /><SupplyDemandChart rows={signalRows} /></div>
+        <CardTable rows={signalRows} />
       </div>
     </section>
   </main>

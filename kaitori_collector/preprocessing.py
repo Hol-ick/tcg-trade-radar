@@ -18,6 +18,13 @@ PRICE_REMOVED_SIGNALS = (
     "가격은 삭제", "거래완료라 가격",
 )
 BUNDLE_SIGNALS = ("일괄", "세트", "전부", "구성", "소스", "덱")
+ARTIFACT_CARD_RE = re.compile(
+    r"(?:https?://|javascript\s*:|<\/?script\b|loadscript\b|adsbygoogle|googlesyndication|"
+    r"(?:window|document)\s*[.[]|queryselector\s*\(|appendchild\s*\(|\b(?:var|const|let)\s+\w+\s*=|"
+    r"function\s*\(|DOM\s*삽입|스크립트|광고\s*삽입)",
+    re.IGNORECASE,
+)
+NON_CARD_LABEL_RE = re.compile(r"^(?:(?:\d+\s*)?(?:장|매|개|통)(?:분)?|한\s*장|(?:장|매|개|통)\s*당|준등포|준등기|등포|등기|택포|반택포|편택포|배송|배송비|가격|합계|총액|일괄\s*(?:시|판매|구매)?|구매|판매|교환|\d+(?:[.,]\d+)?(?:\s+\d+(?:[.,]\d+)?)+|(?:준등포|준등기|등포|등기|택포|배송|배송비|가격|합계|총액|일괄)\s*\d+(?:[.,]\d+)?\s*(?:원|만원|만|천)?)$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -60,6 +67,8 @@ def classify_price(*, raw_price: str, price_unit: str, quantity: int, raw_line: 
 def analysis_status(*, post_status: PostStatus, listing_type: str, card_name: str, price_status: PriceStatus, price_scope: PriceScope) -> AnalysisStatus:
     if post_status in {"completed", "reserved", "price_removed", "image_only"}:
         return "context_only"
+    if is_likely_artifact(card_name):
+        return "excluded"
     if listing_type not in {"sell", "buy", "trade"} or len(card_name.strip()) < 2:
         return "needs_review"
     if price_scope != "per_card" or price_status != "exact":
@@ -85,6 +94,8 @@ def append_quality_reason(reason: str, *, post_status: PostStatus, price_status:
         reasons.append("복수 수량 총액 · 카드 1장 가격 아님")
     elif price_scope == "bundle":
         reasons.append("묶음·세트 총액 · 개별 카드 가격 아님")
+    if analysis == "excluded":
+        reasons.append("스크립트·광고 문구로 추정되는 오염 행")
     if analysis == "context_only" and post_status == "active":
         reasons.append("시장 통계 참고용")
     return ", ".join(dict.fromkeys(reasons))
@@ -94,3 +105,9 @@ def fallback_card_match(card_name: str, *, image_only: bool = False) -> CardMatc
     if image_only:
         return "image_review"
     return "candidate" if len(card_name.strip()) >= 2 else "unmatched"
+
+
+def is_likely_artifact(value: str) -> bool:
+    """Detect HTML/advertising fragments that were parsed as a card label."""
+    candidate = (value or "").strip()
+    return bool(ARTIFACT_CARD_RE.search(candidate) or NON_CARD_LABEL_RE.fullmatch(candidate))
