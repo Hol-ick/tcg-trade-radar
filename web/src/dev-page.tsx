@@ -10,7 +10,7 @@ export function DevPage() {
 }
 
 export function CollectorGuide() {
-  return <main className="explorer-shell collector-shell">
+  return <main className="explorer-shell explorer-dense collector-shell">
     <aside className="saas-sidebar">
       <a className="saas-brand" href={import.meta.env.BASE_URL} aria-label="Trade Radar 홈">
         <span className="brand-mark">TR</span>
