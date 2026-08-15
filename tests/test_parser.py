@@ -267,6 +267,108 @@ class ParserTests(unittest.TestCase):
         self.assertIsNone(row["shipping_included"])
         self.assertEqual(row["review_status"], "needs_review")
 
+    def test_attached_copy_count_is_not_ten_thousand_won_price(self):
+        row = parse_sale_line("이상한사탕1", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["card_name"], "이상한사탕")
+        self.assertEqual(row["quantity"], 1)
+        self.assertEqual(row["raw_price"], "")
+        self.assertEqual(row["price_krw"], 0)
+        self.assertEqual(row["price_status"], "missing")
+        self.assertEqual(row["price_scope"], "unknown")
+        self.assertIn("수량 표기 감지", row["review_reason"])
+
+    def test_x_quantity_marker_is_not_ten_thousand_won_price(self):
+        row = parse_sale_line("나옹 x 2", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["card_name"], "나옹")
+        self.assertEqual(row["quantity"], 2)
+        self.assertEqual(row["price_status"], "missing")
+        self.assertEqual(row["price_krw"], 0)
+
+    def test_attached_copy_count_is_split_before_a_won_amount(self):
+        row = parse_sale_line("하솔3 3500", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["card_name"], "하솔")
+        self.assertEqual(row["quantity"], 3)
+        self.assertEqual(row["raw_price"], "3500")
+        self.assertEqual(row["price_krw"], 3500)
+        self.assertEqual(row["price_unit"], "원 단위 추정")
+        self.assertEqual(row["price_scope"], "per_quantity")
+
+    def test_quantity_before_price_is_not_used_as_the_price(self):
+        row = parse_sale_line("레드카드 1 2000", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["card_name"], "레드카드")
+        self.assertEqual(row["quantity"], 1)
+        self.assertEqual(row["raw_price"], "2000")
+        self.assertEqual(row["price_krw"], 2000)
+
+    def test_multiple_attached_copy_counts_are_not_collapsed_into_a_price(self):
+        row = parse_sale_line("파도타기비치sr1 일반1", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["card_name"], "파도타기비치sr 일반")
+        self.assertEqual(row["quantity"], 2)
+        self.assertEqual(row["price_status"], "missing")
+        self.assertEqual(row["price_krw"], 0)
+
+    def test_unitless_four_digit_amount_is_won_estimate(self):
+        row = parse_sale_line("블루아이즈 3500", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["price_krw"], 3500)
+        self.assertEqual(row["price_unit"], "원 단위 추정")
+
+    def test_inventory_post_uses_context_to_classify_spaced_copy_counts(self):
+        html = """
+        <html><body>
+          <span class="title_subject">덱소스 일괄판매</span>
+          <div class="write_div">이상한사탕1<br>고래킹 3<br>나옹 x 2</div>
+        </body></html>
+        """
+
+        rows = extract_post(html, "https://example.test/post/inventory", "pokemoncardgame", "판매")
+
+        self.assertEqual([row.card_name for row in rows], ["이상한사탕", "고래킹", "나옹"])
+        self.assertEqual([row.quantity for row in rows], [1, 3, 2])
+        self.assertTrue(all(row.price_krw == 0 for row in rows))
+        self.assertTrue(all(row.price_status == "missing" for row in rows))
+
+    def test_set_code_digits_are_not_treated_as_copy_counts(self):
+        row = parse_sale_line("bt-24 아이기오몬 슈레 1장 구합니다", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["quantity"], 1)
+
+    def test_decimal_before_per_card_marker_is_not_split_as_a_quantity(self):
+        row = parse_sale_line("ex9 글판 파워드라몬 시크 1.6 장당 구함다", None, None)
+
+        self.assertIsNone(row)
+
+    def test_set_code_inside_parenthesized_status_is_not_split_as_a_quantity(self):
+        row = parse_sale_line("(완료)ex9 파워드라몬 희소 구매합니다.", None, None)
+
+        self.assertIsNone(row)
+
+    def test_set_code_prefix_does_not_add_to_explicit_card_quantity(self):
+        row = parse_sale_line("Lm2 매그너몬 1장 0.05", None, None)
+
+        self.assertIsNotNone(row)
+        assert row is not None
+        self.assertEqual(row["quantity"], 1)
+
     def test_explicit_won_and_shipping_included_can_be_parsed(self):
         row = parse_sale_line("블루아이즈 울레 35,000원 택포", None, None)
 

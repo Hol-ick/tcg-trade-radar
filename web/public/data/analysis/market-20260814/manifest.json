@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-15T10:36:50+09:00",
+  "generated_at": "2026-08-15T16:22:07+09:00",
   "source": {
-    "path": ".audit/preprocessed-market-20260814/observations.csv",
+    "path": "web/public/data/analysis/market-20260814",
     "rows": 162257,
     "min_posted_at": "2026-03-31T10:11:45+09:00",
     "max_posted_at": "2026-08-13T17:09:45+09:00"

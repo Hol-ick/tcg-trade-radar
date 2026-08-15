@@ -1,0 +1,349 @@
+{
+  "input_root": "web\\public\\data\\analysis\\market-20260814",
+  "output_root": ".audit\\reprocessed-market-20260815",
+  "source_rows": 162257,
+  "reparse": {
+    "input": "web\\public\\data\\analysis\\market-20260814",
+    "output": ".audit\\reprocessed-market-20260815\\<temporary-reparsed-observations.csv>",
+    "counts": {
+      "rows": 162257,
+      "reparsed": 162257,
+      "changed": 50157,
+      "price_to_missing": 36860,
+      "quantity_recovered": 14100,
+      "unparsed": 31352
+    },
+    "examples": [
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/458492",
+        "raw_line": "BT12 드래곤모드 대회판 삽니다.",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/458566",
+        "raw_line": "바황드 완덱 구매합니다 저레어로",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/458761",
+        "raw_line": "월챔 아구몬 삽니다",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/458761",
+        "raw_line": "월챔 아구몬 삽니다",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://gall.dcinside.com/mgallery/board/view/?id=digimontcg&no=458769&page=293",
+        "raw_line": "카드숲 직으로 카구야몬,아바도몬 코어 삽니다",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "2",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/458784",
+        "raw_line": "loadScript('//t1.kakaocdn.net/kas/static/ba.min.js', true);",
+        "old_price_krw": "10000",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "price,unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/458784",
+        "raw_line": "loadScript('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle_direct.js?client=ca-pub-8171468792791627', true, 'anonymous');",
+        "old_price_krw": "20000",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "price,unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/458784",
+        "raw_line": "// ---- DOM 삽입 헬퍼 (현재 스크립트 위치 기준1)",
+        "old_price_krw": "10000",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "price,unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/458811",
+        "raw_line": "ex9 글판 파워드라몬(무겐드라몬) 시크 1.6 장당 구함다",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/458892",
+        "raw_line": "웃코몬 페레 구함요",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "4",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459013",
+        "raw_line": "입문용 무겐 완덱 구해봅니다.(구매완)",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "3",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459025",
+        "raw_line": "ex9 파워드라몬 희소, sp 및 패레 구매합니다.",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459026",
+        "raw_line": "레나몬 ex2 페레 구합니다 ㅠ",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "4",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459056",
+        "raw_line": "ex9 아이즈몬 스케터모드 LM 삼",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459061",
+        "raw_line": "아바도몬 완덱 구해봅니다.(구매완)",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "3",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459220",
+        "raw_line": "디아 완덱 삽니다 구입완료",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459224",
+        "raw_line": "글판 크하 구매합니다",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459385",
+        "raw_line": "ex9 파워드라몬 희소 구매합니다.",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459386",
+        "raw_line": "ex9 페레, 무겐 시크 구합니다!",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "2",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459392",
+        "raw_line": "loadScript('//t1.kakaocdn.net/kas/static/ba.min.js', true);",
+        "old_price_krw": "10000",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "price,unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459392",
+        "raw_line": "// ---- DOM 삽입 헬퍼 (현재 스크립트 위치 기준1)",
+        "old_price_krw": "10000",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "price,unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459392",
+        "raw_line": "loadScript('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle_direct.js?client=ca-pub-8171468792791627', true, 'anonymous');",
+        "old_price_krw": "20000",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "price,unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459525",
+        "raw_line": "오메컨 완덱 구해 봅니다",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459561",
+        "raw_line": "ex9 파워드라몬 희소 구매합니다.",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459626",
+        "raw_line": "ex9 아날로구맨 페레 사요 ㅠㅠ",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459689",
+        "raw_line": "ex8 키메라몬 페레 구합니당",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/459934",
+        "raw_line": "ex9 파워드라몬 희소 구매합니다.",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/460149",
+        "raw_line": "글판 홍염 페레 0.9 금박 0.6에 구합니다",
+        "old_price_krw": "",
+        "new_price_krw": "6000",
+        "new_quantity": "1",
+        "change": "price,quantity"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/460161",
+        "raw_line": "(완료)ex9 파워드라몬 희소 구매합니다.",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/460161",
+        "raw_line": "(완료)ex9 파워드라몬 희소 구매합니다.",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "1",
+        "change": "unparsed"
+      }
+    ]
+  },
+  "export": {
+    "schema_version": 1,
+    "generated_at": "2026-08-15T16:22:07+09:00",
+    "source": {
+      "path": "C:/Users/hs190/AppData/Local/Temp/kaitori-reparse-rwu1aa6a/reparsed-observations.csv",
+      "rows": 162257,
+      "min_posted_at": "2026-03-31T10:11:45+09:00",
+      "max_posted_at": "2026-08-13T17:09:45+09:00"
+    },
+    "counts": {
+      "input_rows": 162257,
+      "partition_rows": 162257,
+      "partitions": 54,
+      "games": 5,
+      "months": 7,
+      "listing_types": 4,
+      "unknown_date_rows": 43
+    },
+    "dimensions": {
+      "games": [
+        "digimontcg",
+        "onepiececardgame",
+        "pokemoncardgame",
+        "tcggame",
+        "vg"
+      ],
+      "year_months": [
+        "2026-03",
+        "2026-04",
+        "2026-05",
+        "2026-06",
+        "2026-07",
+        "2026-08",
+        "unknown-date"
+      ],
+      "listing_types": [
+        "sell",
+        "buy",
+        "trade",
+        "unknown"
+      ]
+    },
+    "schema": [
+      "observation_id",
+      "game_id",
+      "game_name",
+      "year_month",
+      "posted_at",
+      "date_quality",
+      "source_id",
+      "row_id",
+      "post_id",
+      "post_url",
+      "post_title",
+      "seller_id",
+      "seller_name",
+      "author_type",
+      "card_key",
+      "card_name",
+      "card_name_raw",
+      "card_code",
+      "rarity",
+      "listing_type",
+      "listing_type_label",
+      "quantity",
+      "raw_price",
+      "price_krw_observed",
+      "price_status",
+      "price_scope",
+      "price_origin",
+      "shipping_included",
+      "shipping_price_krw",
+      "post_status",
+      "analysis_status",
+      "review_status",
+      "review_reason",
+      "price_confidence",
+      "price_candidate",
+      "include_in_price_stats",
+      "raw_line"
+    ],
+    "files": {
+      "partition_index": "index/partitions.csv",
+      "by_game": "summary/by_game.csv",
+      "by_month": "summary/by_month.csv",
+      "by_listing_type": "summary/by_listing_type.csv",
+      "by_game_month": "summary/by_game_month.csv",
+      "by_game_month_listing_type": "summary/by_game_month_listing_type.csv"
+    }
+  }
+}

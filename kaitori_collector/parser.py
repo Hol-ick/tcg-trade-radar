@@ -81,6 +81,10 @@ RARITY_RE = re.compile(
     r"(?P<rarity>(?:\d+\s*)?(?:프싴|영싴|쿼싴|퍼홀|홀로|시크페레|시크|얼티|울레|레어|슈레|울|슈|컬|싴|얼|구일))$"
 )
 QUANTITY_RE = re.compile(r"(?P<quantity>\d+)\s*장")
+QUANTITY_MARKER_RE = re.compile(r"(?<![\d.])(?P<quantity>\d+)\s*(?:장|매|개)")
+ATTACHED_QUANTITY_RE = re.compile(r"^(?P<label>[^\d\s]+?)(?P<quantity>[1-9]\d?)$")
+STANDALONE_QUANTITY_RE = re.compile(r"^(?P<label>.+?)\s+(?P<quantity>[1-9]\d?)$")
+CARD_CODE_TOKEN_RE = re.compile(r"^[A-Z]{1,6}[-_]?\d{1,4}(?:[-_]?[A-Z0-9]+)?$", re.IGNORECASE)
 MULTI_CARD_RE = re.compile(r"[,/+]|&|\s(?:및|외)\s")
 AMBIGUOUS_QUANTITY_RE = re.compile(r"여러\s*장|다수|수량\s*(?:불명|미상)|전부")
 CSV_FIELDS = [
@@ -397,10 +401,140 @@ def resolve_shipping_price(included: bool | None, shipping_price: int | None) ->
     return shipping_price if shipping_price is not None else DEFAULT_SHIPPING_PRICE_KRW
 
 
+def _is_plausible_price_match(line: str, match: re.Match[str]) -> bool:
+    """Reject card codes and attached copy counts before accepting a number as a price."""
+    if match.group("unit"):
+        return True
+    value = match.group("value")
+    if "." in value or "," in value:
+        return True
+    start, end = match.span("value")
+    previous = line[start - 1] if start else ""
+    following = line[end] if end < len(line) else ""
+    if previous.casefold() in {"x", "×"} or line[:start].rstrip().casefold().endswith((" x", " ×")):
+        return False
+    if previous and (previous.isalnum() or "가" <= previous <= "힣" or previous in ".-_"):
+        return False
+    if following and (following.isalnum() or "가" <= following <= "힣" or following in ".-_"):
+        suffix = line[end:].lstrip()
+        if not suffix.startswith(("에", "으로", "부터", "쯤", "정도", "판매", "팝니다", "구매", "구합니다", "구해", "찾", "양도", "거래", "입니다", "이에요", "예요")):
+            return False
+    return True
+
+
+def _price_matches(line: str) -> list[re.Match[str]]:
+    return [match for match in PRICE_RE.finditer(line) if _is_plausible_price_match(line, match)]
+
+
+def _strip_quantity_markers(label: str) -> tuple[str, int, bool]:
+    """Separate explicit quantity markers and compact suffix counts from a label."""
+    working = normalize_space(label).strip()
+    quantity = 0
+    detected = False
+
+    x_match = re.search(r"(?P<name>.*?)\s*[x×]\s*(?P<quantity>[1-9]\d?)\s*$", working, re.IGNORECASE)
+    if x_match:
+        quantity += int(x_match.group("quantity"))
+        working = x_match.group("name").strip()
+        detected = True
+
+    marker_matches = list(QUANTITY_MARKER_RE.finditer(working))
+    for marker in reversed(marker_matches):
+        previous = working[marker.start() - 1] if marker.start() else ""
+        if re.search(r"\s", working[marker.start():marker.end()]) and previous and (previous.isalnum() or "가" <= previous <= "힣"):
+            continue
+        quantity += int(marker.group("quantity"))
+        working = f"{working[:marker.start()]} {working[marker.end():]}"
+        detected = True
+
+    tokens = working.split()
+    for index, token in enumerate(tokens):
+        attached = ATTACHED_QUANTITY_RE.fullmatch(token)
+        if not attached or CARD_CODE_TOKEN_RE.fullmatch(token) or any(mark in token for mark in "()[]{}"):
+            continue
+        tokens[index] = attached.group("label")
+        quantity += int(attached.group("quantity"))
+        detected = True
+
+    return normalize_space(" ".join(tokens)).strip("-·:"), max(1, quantity), detected
+
+
+def _strip_trailing_quantity(label: str) -> tuple[str, int, bool]:
+    match = STANDALONE_QUANTITY_RE.fullmatch(normalize_space(label).strip())
+    if not match:
+        return label, 1, False
+    if match.group("label").rstrip().endswith((".", "-", "_")):
+        return label, 1, False
+    return match.group("label").strip(), int(match.group("quantity")), True
+
+
+def _card_fields(item_label: str) -> tuple[str, str]:
+    rarity_match = RARITY_RE.search(item_label)
+    rarity = normalize_space(rarity_match.group("rarity")) if rarity_match else ""
+    card_name = item_label[: rarity_match.start()].strip(" -·") if rarity_match else item_label
+    return card_name or item_label, rarity
+
+
+def _missing_price_row(
+    *,
+    parse_line: str,
+    raw_line: str,
+    label: str,
+    default_shipping: bool | None,
+    shipping_price: int | None,
+    allow_standalone_quantity: bool = False,
+) -> dict[str, Any] | None:
+    item_label, quantity, detected = _strip_quantity_markers(label)
+    if allow_standalone_quantity and not detected:
+        item_label, standalone_quantity, detected = _strip_trailing_quantity(item_label)
+        if detected:
+            quantity = standalone_quantity
+    if not detected:
+        return None
+    if not item_label or re.search(r"^(?:택포|반택포|편택포|배송|택배|반택|편택|가격|합계|총액)\b", item_label):
+        return None
+    item_label = re.sub(r"\b(?:일괄|세트|묶음|전체)\b", "", item_label)
+    item_label = re.sub(r"\b(?:택포|배송비\s*포함|택배비\s*포함)\b", "", item_label)
+    item_label = normalize_space(item_label).strip("-·:")
+    if not item_label:
+        return None
+    card_name, rarity = _card_fields(item_label)
+    included = parse_shipping(parse_line, default_shipping)
+    return {
+        "card_name": card_name,
+        "rarity": rarity,
+        "raw_price": "",
+        "price_krw": 0,
+        "price_unit": "미기재",
+        "quantity": quantity,
+        "shipping_included": included,
+        "shipping_price_krw": resolve_shipping_price(included, shipping_price),
+        "review_status": "needs_review",
+        "review_reason": "수량 표기 감지 · 가격 미기재",
+        "raw_line": raw_line,
+        "price_status": "missing",
+        "price_scope": "unknown",
+        "price_origin": "unknown",
+    }
+
+
+def _looks_like_inventory_body(title: str, body: str) -> bool:
+    """Enable conservative spaced-count handling for deck-list style posts."""
+    if "일괄" in title:
+        return True
+    quantity_lines = 0
+    for line in body.splitlines():
+        if re.search(r"[x×]\s*[1-9]\d?\s*$", line, re.IGNORECASE) or re.search(r"[^\d\s][1-9]\d?\s*$", line):
+            quantity_lines += 1
+    return quantity_lines >= 2
+
+
 def parse_sale_line(
     line: str,
     default_shipping: bool | None,
     shipping_price: int | None,
+    *,
+    quantity_context: bool = False,
 ) -> dict[str, Any] | None:
     line = normalize_space(line).strip("-·:")
     raw_line = line
@@ -410,9 +544,20 @@ def parse_sale_line(
     leading_match = LEADING_PRICE_RE.match(parse_line)
     if leading_match and LEADING_PRICE_SUFFIX_RE.match(leading_match.group("label").lstrip()):
         leading_match = None
-    match = None if leading_match else PRICE_RE.search(parse_line)
+    matches = [] if leading_match else _price_matches(parse_line)
+    match = None if leading_match else matches[-1] if matches else None
+    if not leading_match and match and quantity_context and not match.group("unit") and "." not in match.group("value") and "," not in match.group("value"):
+        if int(match.group("value")) <= 20 and len(matches) == 1:
+            match = None
     if not leading_match and not match:
-        return None
+        return _missing_price_row(
+            parse_line=parse_line,
+            raw_line=raw_line,
+            label=parse_line,
+            default_shipping=default_shipping,
+            shipping_price=shipping_price,
+            allow_standalone_quantity=quantity_context,
+        )
 
     if leading_match:
         label = normalize_space(leading_match.group("label").strip("-·:"))
@@ -425,29 +570,38 @@ def parse_sale_line(
         unit = match.group("unit") or ""
     if not label or re.search(r"^(?:택포|반택포|편택포|배송|택배|반택|편택|가격|합계|총액)\b", label):
         return None
-    quantity_match = QUANTITY_RE.search(label)
-    quantity = int(quantity_match.group("quantity")) if quantity_match else 1
+    label, standalone_quantity, standalone_detected = _strip_trailing_quantity(label)
+    item_label, quantity, marker_detected = _strip_quantity_markers(label)
+    if standalone_detected:
+        quantity = standalone_quantity + (quantity if marker_detected else 0)
+        marker_detected = True
     is_bundle = bool(re.search(r"일괄|세트|묶음|전체", label))
-    item_label = QUANTITY_RE.sub("", label)
     item_label = re.sub(r"\b(?:일괄|세트|묶음|전체)\b", "", item_label)
     item_label = re.sub(r"\b(?:택포|배송비\s*포함|택배비\s*포함)\b", "", item_label)
     item_label = normalize_space(item_label).strip("-·:")
-    rarity_match = RARITY_RE.search(item_label)
-    rarity = normalize_space(rarity_match.group("rarity")) if rarity_match else ""
-    card_name = item_label[: rarity_match.start()].strip(" -·") if rarity_match else item_label
-    card_name = card_name or item_label
+    card_name, rarity = _card_fields(item_label)
 
     raw_price = raw_value_text.replace(",", ".")
     if unit == "원":
         price_krw = round(float(raw_value_text.replace(",", "")))
         price_unit = "원 명시"
-    else:
+    elif "." in raw_value_text or ("," in raw_value_text and len(raw_value_text.rsplit(",", 1)[-1]) <= 2):
         price_krw = round(float(raw_price) * 10_000)
         price_unit = "만원 단위 추정"
+    else:
+        numeric_price = int(raw_value_text.replace(",", ""))
+        if numeric_price >= 1_000:
+            price_krw = numeric_price
+            price_unit = "원 단위 추정"
+        else:
+            price_krw = numeric_price * 10_000
+            price_unit = "만원 단위 추정"
 
     reasons: list[str] = []
     if not unit:
         reasons.append("가격 단위 추정")
+    if marker_detected:
+        reasons.append("수량 표기 감지")
     if is_bundle:
         reasons.append("일괄·세트 가격")
     if MULTI_CARD_RE.search(item_label):
@@ -487,9 +641,10 @@ def extract_post(html: str, url: str, gallery_id: str, subject: str = "") -> lis
     default_shipping = infer_default_shipping(body)
     shipping_price = parse_shipping_price(body)
     intent = classify_listing(document["title"], body, subject)
+    quantity_context = _looks_like_inventory_body(document["title"], body)
     rows: list[ExtractedRow] = []
     for line in body.splitlines():
-        parsed = parse_sale_line(line, default_shipping, shipping_price)
+        parsed = parse_sale_line(line, default_shipping, shipping_price, quantity_context=quantity_context)
         if parsed is None:
             continue
         rows.append(ExtractedRow(
