@@ -33,6 +33,7 @@ class PreprocessingTests(unittest.TestCase):
         self.assertTrue(is_likely_artifact("DOM 삽입 헬퍼 현재 스크립트 위치 기준"))
         self.assertTrue(is_likely_artifact("등포"))
         self.assertTrue(is_likely_artifact("한 장"))
+        self.assertTrue(is_likely_artifact("장당"))
         self.assertTrue(is_likely_artifact("일괄시"))
         self.assertTrue(is_likely_artifact("준등포 2만"))
         self.assertTrue(is_likely_artifact("1.5 0.5 1.0"))

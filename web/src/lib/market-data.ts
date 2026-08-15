@@ -33,7 +33,7 @@ const PER_UNIT_NOISE = /(?:장|매|개|통)\s*당(?![A-Za-z가-힣])|한\s*장(?
 const PRICE_NOISE = /(?<![A-Za-z가-힣0-9.-])\d[\d,]*(?:\.\d+)?\s*(?:원|만원|만)?(?=$|[^A-Za-z가-힣0-9])/gi
 const SHIPPING_NOISE = /(?:준등포|준등기|등포|등기|택포|택배포함|배송비\s*포함|직거래)/gi
 const ARTIFACT_CARD_TEXT = /(?:https?:\/\/|javascript\s*:|<\/?script\b|loadscript\b|adsbygoogle|googlesyndication|(?:window|document)\s*[.[]|queryselector\s*\(|appendchild\s*\(|\b(?:var|const|let)\s+\w+\s*=|function\s*\(|DOM\s*삽입|스크립트|광고\s*삽입)/i
-const NON_CARD_LABEL = /^(?:(?:\d+\s*)?(?:장|매|개|통)(?:분)?|한\s*장|(?:장|매|개|통)\s*당|준등포|준등기|등포|등기|택포|반택포|편택포|배송|배송비|가격|합계|총액|일괄\s*(?:시|판매|구매)?|구매|판매|교환|\d+(?:[.,]\d+)?(?:\s+\d+(?:[.,]\d+)?)+)$/i
+const NON_CARD_LABEL = /^(?:(?:\d+\s*)?(?:장|매|개|통)(?:분)?|한\s*장|(?:장|매|개|통)\s*당|준등포|준등기|등포|등기|택포|반택포|편택포|배송|배송비|가격|합계|총액|일괄\s*(?:시|판매|구매)?|구매|판매|교환|\d+(?:[.,]\d+)?(?:\s+\d+(?:[.,]\d+)?)+|(?:준등포|준등기|등포|등기|택포|배송|배송비|가격|합계|총액|일괄)\s*\d+(?:[.,]\d+)?\s*(?:원|만원|만|천)?)$/i
 
 export function parseMarketCsv(text: string, name: string): MarketDataset {
   const records = parseCsvRecords(text)
@@ -103,16 +103,17 @@ function normalizeMarketRow(record: Record<string, string>, id: string): MarketR
   const candidateCardName = sourceCardName || rawLine || title
   const normalizedCardName = normalizeCardName(candidateCardName)
   const cardName = normalizedCardName || (sourceCardName && !NON_CARD_LABEL.test(sourceCardName) ? sourceCardName : "이름 미확인")
+  const canonicalCardKeySource = first(record, "card_key")
   const postedAt = first(record, "posted_at", "date", "created_at")
   const dateKey = postedAt.slice(0, 10)
   const priceKrw = positiveNumber(first(record, "price_krw_observed", "price_krw", "buy_price_krw"))
   const quantity = Math.max(1, Math.round(positiveNumber(first(record, "quantity")) || 1))
   const listingType = normalizeIntent(first(record, "listing_type"), `${title} ${rawLine}`)
   const reviewStatus = first(record, "review_status", "status") || "unknown"
-  const quality = isLikelyArtifact(sourceCardName, rawLine, normalizedCardName) || !normalizedCardName ? "excluded" : normalizeQuality(first(record, "analysis_status"), reviewStatus, priceKrw)
+  const quality = isLikelyArtifact(sourceCardName, rawLine, normalizedCardName, canonicalCardKeySource) || !normalizedCardName ? "excluded" : normalizeQuality(first(record, "analysis_status"), reviewStatus, priceKrw)
   const priceStatus = normalizePriceStatus(first(record, "price_status"), first(record, "price_unit"), priceKrw)
   const priceScope = normalizePriceScope(first(record, "price_scope"), quantity, rawLine)
-  const canonicalCardKey = first(record, "card_key").toLocaleLowerCase("ko-KR")
+  const canonicalCardKey = canonicalCardKeySource.toLocaleLowerCase("ko-KR")
   const cardKey = canonicalCardKey || normalizeCardName(sourceCardName || rawLine || title).toLocaleLowerCase("ko-KR")
   if (!cardKey && !title) return null
   return {
