@@ -61,6 +61,7 @@ export function MarketExplorer() {
   const summary = useMemo(() => summarize(filteredRows), [filteredRows])
   const dateRange = useMemo(() => getDateRange(dataset?.rows || []), [dataset])
   const hasFilters = Boolean(query || intent !== "all" || quality !== "all" || since || until)
+  const isBundledSample = Boolean(dataset && SAMPLE_FILES.some((sample) => sample.file === dataset.name))
   const openFilePicker = () => fileInput.current?.click()
 
   const handleFiles = (files: FileList | null) => {
@@ -107,7 +108,7 @@ export function MarketExplorer() {
       <div className="sidebar-section-label">Data source</div>
       <div className="sidebar-source">
         <span className="source-icon"><Database size={15} /></span>
-        <span><strong>{dataset?.name || "Loading CSV"}</strong><small>{dataset ? `${dataset.rows.length.toLocaleString("ko-KR")} rows loaded` : "Preparing workspace"}</small></span>
+        <span><strong>{dataset?.name || "Loading CSV"}</strong><small>{dataset ? `${isBundledSample ? "Bundled sample · " : "Uploaded CSV · "}${dataset.rows.length.toLocaleString("ko-KR")} rows` : "Preparing workspace"}</small></span>
       </div>
       <div className="sidebar-spacer" />
       <div className="sidebar-workspace"><span>TCG</span><span><strong>Personal workspace</strong><small>CSV market analysis</small></span></div>
@@ -126,7 +127,7 @@ export function MarketExplorer() {
         </section>
 
         <section className="source-card" aria-label="데이터 소스">
-          <div className="source-card-main"><span className="source-avatar"><Database size={17} /></span><span><small>Current dataset</small><strong>{dataset?.name || "CSV 준비 중"}</strong><em>{dataset ? `${dataset.rows.length.toLocaleString("ko-KR")} rows · ${dataset.headers.length} columns` : "Loading data"}</em></span></div>
+          <div className="source-card-main"><span className="source-avatar"><Database size={17} /></span><span><small>{dataset ? (isBundledSample ? "Bundled sample" : "Uploaded CSV") : "Current dataset"}</small><strong>{dataset?.name || "CSV 준비 중"}</strong><em>{dataset ? `${dataset.rows.length.toLocaleString("ko-KR")} rows · ${dataset.headers.length} columns` : "Loading data"}</em></span></div>
           <div className="source-card-actions"><select aria-label="샘플 CSV 선택" value={dataset?.name || SAMPLE_FILES[0].file} onChange={(event) => void loadSample(event.target.value)}>{SAMPLE_FILES.map((sample) => <option key={sample.file} value={sample.file}>{sample.label}</option>)}</select><button className={`button button-secondary ${isDragging ? "dragging" : ""}`} type="button" onClick={openFilePicker} onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }} onDragLeave={() => setIsDragging(false)} onDrop={onDrop}><FileUp size={15} />Choose file</button><input ref={fileInput} className="sr-only" type="file" accept=".csv,text/csv" onChange={(event: ChangeEvent<HTMLInputElement>) => handleFiles(event.target.files)} /></div>
         </section>
         {loadError && <div className="explorer-error" role="alert">{loadError}</div>}
@@ -169,19 +170,21 @@ function Metric({ icon, label, value, detail, tone }: { icon: ReactNode; label: 
 
 function CardTable({ rows }: { rows: MarketRow[] }) {
   const groups = useMemo(() => {
-    const grouped = new Map<string, { name: string; count: number; supply: number; demand: number; prices: number[]; sellers: Set<string>; date: string }>()
+    const grouped = new Map<string, { name: string; count: number; supply: number; demand: number; unknown: number; prices: number[]; sellers: Set<string>; date: string }>()
     for (const row of rows) {
-      const current = grouped.get(row.cardKey) || { name: row.cardName, count: 0, supply: 0, demand: 0, prices: [], sellers: new Set<string>(), date: "" }
+      const current = grouped.get(row.cardKey) || { name: row.cardName, count: 0, supply: 0, demand: 0, unknown: 0, prices: [], sellers: new Set<string>(), date: "" }
       current.count += 1
-      if (row.listingType === "sell") { current.supply += 1; if (row.priceKrw != null && row.priceScope === "per_card") current.prices.push(row.priceKrw) }
-      if (row.listingType === "buy") { current.demand += 1; if (row.priceKrw != null && row.priceScope === "per_card") current.prices.push(row.priceKrw) }
+      if (row.listingType === "sell") current.supply += 1
+      else if (row.listingType === "buy") current.demand += 1
+      else current.unknown += 1
+      if (row.priceKrw != null && row.priceScope === "per_card") current.prices.push(row.priceKrw)
       if (row.sellerName) current.sellers.add(row.sellerName)
       if (row.dateKey > current.date) current.date = row.dateKey
       grouped.set(row.cardKey, current)
     }
-    return [...grouped.values()].sort((left, right) => (right.demand - right.supply) - (left.demand - left.supply) || right.count - left.count).slice(0, 12)
+    return [...grouped.values()].sort((left, right) => (right.supply + right.demand) - (left.supply + left.demand) || right.count - left.count).slice(0, 12)
   }, [rows])
-  return <section className="table-card" id="signals"><div className="table-card-header"><div><span className="eyebrow">CARD SIGNALS</span><h2>Card-level market signals</h2></div><span className="table-count">{groups.length} cards shown</span></div>{groups.length === 0 ? <div className="chart-empty">현재 필터에 맞는 카드가 없습니다.</div> : <div className="card-table-wrap"><table><thead><tr><th>Card</th><th>Supply</th><th>Demand</th><th>Median price</th><th>Sellers</th><th>Last posted</th></tr></thead><tbody>{groups.map((group) => <tr key={group.name}><td><strong>{group.name}</strong><small>{group.count} observations</small></td><td><span className="table-number supply-text">{group.supply}</span></td><td><span className="table-number demand-text">{group.demand}</span></td><td>{group.prices.length ? `${Math.round(median(group.prices)).toLocaleString("ko-KR")}원` : "—"}</td><td>{group.sellers.size}</td><td>{group.date ? group.date.replaceAll("-", ".") : "—"}</td></tr>)}</tbody></table></div>}<div className="table-card-footer"><span>Showing the top 12 cards by market activity</span><span>{rows.length.toLocaleString("ko-KR")} total observations</span></div></section>
+  return <section className="table-card" id="signals"><div className="table-card-header"><div><span className="eyebrow">CARD SIGNALS</span><h2>Card-level market signals</h2></div><span className="table-count">{groups.length} cards shown</span></div>{groups.length === 0 ? <div className="chart-empty">현재 필터에 맞는 카드가 없습니다.</div> : <div className="card-table-wrap"><table><thead><tr><th>Card</th><th>Supply</th><th>Demand</th><th>Unclassified</th><th>Observed median</th><th>Sellers</th><th>Last posted</th></tr></thead><tbody>{groups.map((group) => <tr key={group.name}><td><strong>{group.name}</strong><small>{group.count} observations</small></td><td><span className="table-number supply-text">{group.supply}</span></td><td><span className="table-number demand-text">{group.demand}</span></td><td><span className="table-number unknown-text">{group.unknown || "—"}</span></td><td>{group.prices.length ? `${Math.round(median(group.prices)).toLocaleString("ko-KR")}원` : "—"}</td><td>{group.sellers.size}</td><td>{group.date ? group.date.replaceAll("-", ".") : "—"}</td></tr>)}</tbody></table></div>}<div className="table-card-footer"><span>Top 12 cards by classified activity and observations</span><span>{rows.length.toLocaleString("ko-KR")} total observations</span></div></section>
 }
 
 function summarize(rows: MarketRow[]) {

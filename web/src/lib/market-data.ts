@@ -7,7 +7,7 @@ export type MarketDataset = {
   loadedAt: string
 }
 
-const SELL_SIGNALS = /판매|팔아요|팝니다|ㅍㅍ|sell|selling/i
+const SELL_SIGNALS = /판매|팔아요|팝니다|파는|파는데|판매중|ㅍㅍ|ㅍㅇ|sell|selling/i
 const BUY_SIGNALS = /구매|구합니다|삽니다|찾습니다|구해요|매입|buy|wanted/i
 const TRADE_SIGNALS = /교환|트레이드|교환합니다|trade/i
 
