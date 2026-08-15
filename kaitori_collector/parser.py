@@ -77,8 +77,48 @@ LEADING_PRICE_RE = re.compile(
     r"(?P<unit>만원|만|원)?(?P<label>.*)$"
 )
 LEADING_PRICE_SUFFIX_RE = re.compile(r"^(?:에|으로|부터|쯤|정도|판매|팝니다|구매|구합니다|구해|찾|양도|거래|입니다|이에요|예요)")
-RARITY_RE = re.compile(
-    r"(?P<rarity>(?:\d+\s*)?(?:프싴|영싴|쿼싴|퍼홀|홀로|시크페레|시크|얼티|울레|레어|슈레|울|슈|컬|싴|얼|구일))$"
+RARITY_ALIASES = {
+    "오버프싴": "오버프싴",
+    "오버프시크": "오버프싴",
+    "오버울레": "오버울레",
+    "오버울": "오버울",
+    "프리시크": "프싴",
+    "프시크": "프싴",
+    "프싴": "프싴",
+    "영싴": "영싴",
+    "영시크": "영싴",
+    "쿼싴": "쿼싴",
+    "쿼시크": "쿼싴",
+    "퍼홀": "퍼홀",
+    "홀로": "홀로",
+    "시크페레": "시크페레",
+    "시크페러렐": "시크페레",
+    "시크릿": "시크",
+    "시크": "시크",
+    "싴": "시크",
+    "얼티미트": "얼티",
+    "얼티": "얼티",
+    "얼": "얼티",
+    "울트라": "울레",
+    "울레": "울레",
+    "울": "울레",
+    "슈퍼": "슈레",
+    "슈레": "슈레",
+    "슈": "슈레",
+    "컬레": "컬레",
+    "컬": "컬레",
+    "레어": "레어",
+    "구일": "구일",
+}
+RARITY_TERMS = tuple(sorted(RARITY_ALIASES, key=len, reverse=True))
+RARITY_PATTERN = "|".join(re.escape(term) for term in RARITY_TERMS)
+RARITY_RE = re.compile(rf"(?P<rarity>{RARITY_PATTERN})$", re.IGNORECASE)
+RARITY_PRICE_RE = re.compile(
+    rf"(?P<rarity>{RARITY_PATTERN})"
+    r"(?:\s*(?P<quantity>[1-9]\d?)\s*장)?"
+    r"(?:\s*장당)?\s*"
+    r"(?P<value>\d+(?:[.,]\d+)?)(?P<unit>만원|만|원)?",
+    re.IGNORECASE,
 )
 QUANTITY_RE = re.compile(r"(?P<quantity>\d+)\s*장")
 QUANTITY_MARKER_RE = re.compile(r"(?<![\d.])(?P<quantity>\d+)\s*(?:장|매|개)")
@@ -470,9 +510,101 @@ def _strip_trailing_quantity(label: str) -> tuple[str, int, bool]:
 
 def _card_fields(item_label: str) -> tuple[str, str]:
     rarity_match = RARITY_RE.search(item_label)
-    rarity = normalize_space(rarity_match.group("rarity")) if rarity_match else ""
+    rarity = normalize_rarity(rarity_match.group("rarity")) if rarity_match else ""
     card_name = item_label[: rarity_match.start()].strip(" -·") if rarity_match else item_label
     return card_name or item_label, rarity
+
+
+def normalize_rarity(value: str) -> str:
+    """Collapse spelling/count variants into one filterable rarity label."""
+    compact = re.sub(r"\s+", "", normalize_space(value)).strip("-·:[]()")
+    compact = re.sub(r"^\d+(?:[.,]\d+)?", "", compact)
+    return RARITY_ALIASES.get(compact.casefold(), compact)
+
+
+def _rarity_header(line: str) -> str:
+    """Return a section rarity such as `오버프싴` when a line is only a heading."""
+    value = normalize_space(line).strip("-·:[]()")
+    value = re.sub(r"^(?:그\s*외|기타|나머지)\s+", "", value)
+    return normalize_rarity(value) if normalize_rarity(value) in RARITY_ALIASES.values() else ""
+
+
+def _is_rarity_price_match(line: str, match: re.Match[str]) -> bool:
+    """Reject attached counts such as `2프싴` when they are not prices."""
+    start = match.start("rarity")
+    previous = line[start - 1] if start else ""
+    if previous and (previous.isalnum() or "가" <= previous <= "힣"):
+        return False
+    end = match.end()
+    following = line[end:]
+    if following and not following[0].isspace() and following[0] not in ".,!?)]":
+        return False
+    return True
+
+
+def _price_value(raw_value: str, unit: str) -> tuple[int, str, str]:
+    """Convert a text amount using the project's existing Korean price convention."""
+    if unit == "원":
+        return round(float(raw_value.replace(",", ""))), "원 명시", raw_value
+    normalized = raw_value.replace(",", ".")
+    if "." in raw_value or ("," in raw_value and len(raw_value.rsplit(",", 1)[-1]) <= 2):
+        return round(float(normalized) * 10_000), "만원 단위 추정", normalized
+    numeric_price = int(raw_value.replace(",", ""))
+    if numeric_price >= 1_000:
+        return numeric_price, "원 단위 추정", raw_value
+    return numeric_price * 10_000, "만원 단위 추정", raw_value
+
+
+def _parse_rarity_price_variants(
+    line: str,
+    default_shipping: bool | None,
+    shipping_price: int | None,
+) -> list[dict[str, Any]]:
+    """Split `카드 슈레 0.3 컬레 0.5` into one observation per rarity price."""
+    matches = [match for match in RARITY_PRICE_RE.finditer(line) if _is_rarity_price_match(line, match)]
+    if len(matches) < 2:
+        return []
+    base_label = normalize_space(line[: matches[0].start()].strip("-·:"))
+    if not base_label:
+        return []
+    base_label, base_quantity, _ = _strip_quantity_markers(base_label)
+    base_label = re.sub(r"\b(?:일괄|세트|묶음|전체)\b", "", base_label)
+    base_label = normalize_space(base_label).strip("-·:")
+    card_name, _ = _card_fields(base_label)
+    if not card_name or len(card_name) < 2:
+        return []
+    included = parse_shipping(line, default_shipping)
+    variants: list[dict[str, Any]] = []
+    for match in matches:
+        raw_value = match.group("value")
+        unit = match.group("unit") or ""
+        price_krw, price_unit, raw_price = _price_value(raw_value, unit)
+        quantity = int(match.group("quantity") or base_quantity or 1)
+        price_scope = "per_card" if match.group("quantity") or "장당" in match.group(0) else "per_quantity" if quantity > 1 else "per_card"
+        reasons = ["레어도별 가격 분리"]
+        if match.group("quantity"):
+            reasons.append("수량 표기 감지")
+        if not unit:
+            reasons.append("가격 단위 추정")
+        if included is None:
+            reasons.append("배송비 포함 여부 미확정")
+        variants.append({
+            "card_name": card_name,
+            "rarity": normalize_rarity(match.group("rarity")),
+            "raw_price": raw_price,
+            "price_krw": price_krw,
+            "price_unit": price_unit,
+            "quantity": quantity,
+            "shipping_included": included,
+            "shipping_price_krw": resolve_shipping_price(included, shipping_price),
+            "review_status": "needs_review",
+            "review_reason": ", ".join(reasons),
+            "raw_line": line,
+            "price_status": "exact" if unit == "원" else "estimated",
+            "price_scope": price_scope,
+            "price_origin": "text",
+        })
+    return variants
 
 
 def _missing_price_row(
@@ -529,7 +661,33 @@ def _looks_like_inventory_body(title: str, body: str) -> bool:
     return quantity_lines >= 2
 
 
+def parse_sale_line_variants(
+    line: str,
+    default_shipping: bool | None,
+    shipping_price: int | None,
+    *,
+    quantity_context: bool = False,
+) -> list[dict[str, Any]]:
+    variants = _parse_rarity_price_variants(line, default_shipping, shipping_price)
+    if variants:
+        return variants
+    parsed = _parse_sale_line_single(line, default_shipping, shipping_price, quantity_context=quantity_context)
+    return [parsed] if parsed is not None else []
+
+
 def parse_sale_line(
+    line: str,
+    default_shipping: bool | None,
+    shipping_price: int | None,
+    *,
+    quantity_context: bool = False,
+) -> dict[str, Any] | None:
+    """Keep the legacy single-row interface for callers outside post extraction."""
+    variants = parse_sale_line_variants(line, default_shipping, shipping_price, quantity_context=quantity_context)
+    return variants[-1] if variants else None
+
+
+def _parse_sale_line_single(
     line: str,
     default_shipping: bool | None,
     shipping_price: int | None,
@@ -538,7 +696,7 @@ def parse_sale_line(
 ) -> dict[str, Any] | None:
     line = normalize_space(line).strip("-·:")
     raw_line = line
-    parse_line = re.sub(r"\s*(?:거래완료|판매완료|구매완료|거래\s*완료|판매\s*완료|구매\s*완료|예약중|예약\s*중)\s*$", "", line).strip()
+    parse_line = re.sub(r"\s*(?:거래완료|판매완료|구매완료|판매완|판완|완판|거래\s*완료|판매\s*완료|구매\s*완료|예약중|예약\s*중)\s*$", "", line).strip()
     if not parse_line or parse_line.lower().startswith(("http", "- dc", "sadao")):
         return None
     leading_match = LEADING_PRICE_RE.match(parse_line)
@@ -643,22 +801,29 @@ def extract_post(html: str, url: str, gallery_id: str, subject: str = "") -> lis
     intent = classify_listing(document["title"], body, subject)
     quantity_context = _looks_like_inventory_body(document["title"], body)
     rows: list[ExtractedRow] = []
+    section_rarity = ""
     for line in body.splitlines():
-        parsed = parse_sale_line(line, default_shipping, shipping_price, quantity_context=quantity_context)
-        if parsed is None:
+        header_rarity = _rarity_header(line)
+        if header_rarity:
+            section_rarity = header_rarity
             continue
-        rows.append(ExtractedRow(
-            gallery_id=gallery_id,
-            post_title=document["title"],
-            post_url=document["url"],
-            posted_at=document["posted_at"],
-            listing_type=intent.listing_type,
-            intent_confidence=intent.confidence,
-            price_type=intent.price_type,
-            author_name=document.get("author_name", ""),
-            author_type=document.get("author_type", "unknown"),
-            **parsed,
-        ))
+        parsed_variants = parse_sale_line_variants(line, default_shipping, shipping_price, quantity_context=quantity_context)
+        for parsed in parsed_variants:
+            if section_rarity and not parsed["rarity"]:
+                parsed["rarity"] = section_rarity
+                parsed["review_reason"] = ", ".join(filter(None, [parsed["review_reason"], "레어도 구간 상속"]))
+            rows.append(ExtractedRow(
+                gallery_id=gallery_id,
+                post_title=document["title"],
+                post_url=document["url"],
+                posted_at=document["posted_at"],
+                listing_type=intent.listing_type,
+                intent_confidence=intent.confidence,
+                price_type=intent.price_type,
+                author_name=document.get("author_name", ""),
+                author_type=document.get("author_type", "unknown"),
+                **parsed,
+            ))
     if not rows and intent.listing_type == "buy":
         card_name = _buy_card_label(document["title"], body)
         if card_name:

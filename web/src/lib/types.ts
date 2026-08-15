@@ -99,6 +99,7 @@ export type MarketRow = {
   galleryId: string
   cardName: string
   cardKey: string
+  rarity: string
   sellerName: string
   listingType: MarketIntent
   priceKrw: number | null

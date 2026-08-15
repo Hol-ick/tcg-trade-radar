@@ -3,7 +3,7 @@ import { Activity, ArrowUpRight, BarChart3, Database, FileUp, LayoutDashboard, S
 
 import { GameLogo } from "@/components/game-logo"
 import { PriceTrendChart, SupplyDemandChart } from "@/components/market-charts"
-import { datasetUrl, marketCatalogUrl, MARKET_CATALOG_ID, parseMarketCsv, parsePartitionCatalog, type MarketCatalogEntry, type MarketDataset } from "@/lib/market-data"
+import { datasetUrl, marketCatalogUrl, MARKET_CATALOG_ID, normalizeRarity, parseMarketCsv, parsePartitionCatalog, type MarketCatalogEntry, type MarketDataset } from "@/lib/market-data"
 import { GALLERY_PRESETS, type MarketIntent, type MarketQuality, type MarketRow } from "@/lib/types"
 
 const SAMPLE_FILES = [
@@ -15,6 +15,7 @@ type DatasetOption = { file: string; label: string; source: "sample" | "git" }
 
 type IntentFilter = MarketIntent | "all"
 type QualityFilter = MarketQuality | "all"
+type RarityFilter = "all" | "미분류" | string
 const INTENT_FILTERS: IntentFilter[] = ["all", "sell", "buy", "trade", "unknown"]
 
 export function MarketExplorer() {
@@ -24,6 +25,7 @@ export function MarketExplorer() {
   const [catalogError, setCatalogError] = useState("")
   const [query, setQuery] = useState("")
   const [intent, setIntent] = useState<IntentFilter>("all")
+  const [rarity, setRarity] = useState<RarityFilter>("all")
   const [quality, setQuality] = useState<QualityFilter>("all")
   const [since, setSince] = useState("")
   const [until, setUntil] = useState("")
@@ -43,6 +45,7 @@ export function MarketExplorer() {
       setDataset(nextDataset)
       const detectedGameId = nextDataset.rows.find((row) => row.galleryId)?.galleryId
       if (detectedGameId) setSelectedGameId(detectedGameId)
+      setRarity("all")
       setSelectedCardKey(null)
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "CSV를 불러오지 못했습니다")
@@ -79,6 +82,7 @@ export function MarketExplorer() {
         loadedAt: new Date().toISOString(),
       })
       setIntent("all")
+      setRarity("all")
       setSelectedCardKey(null)
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "게임 데이터를 불러오지 못했습니다")
@@ -115,18 +119,19 @@ export function MarketExplorer() {
       const matchesGame = row.galleryId === selectedGameId || !row.galleryId
       const matchesQuery = !needle || [row.cardKey, row.cardName, row.sellerName, row.title, row.rawLine].some((value) => value.toLocaleLowerCase("ko-KR").includes(needle))
       const matchesIntent = intent === "all" || row.listingType === intent
+      const matchesRarity = rarity === "all" || (rarity === "미분류" ? !row.rarity : row.rarity === rarity)
       const matchesQuality = quality === "all" || row.quality === quality
       const matchesSince = !since || (row.dateKey && row.dateKey >= since)
       const matchesUntil = !until || (row.dateKey && row.dateKey <= until)
-      return matchesGame && matchesQuery && matchesIntent && matchesQuality && matchesSince && matchesUntil
+      return matchesGame && matchesQuery && matchesIntent && matchesRarity && matchesQuality && matchesSince && matchesUntil
     })
-  }, [dataset, intent, quality, query, selectedGameId, since, until])
+  }, [dataset, intent, quality, query, rarity, selectedGameId, since, until])
 
   const signalRows = useMemo(() => quality === "excluded" ? filteredRows : filteredRows.filter((row) => row.quality !== "excluded"), [filteredRows, quality])
-  const selectedRows = useMemo(() => selectedCardKey ? signalRows.filter((row) => row.cardKey === selectedCardKey) : [], [selectedCardKey, signalRows])
+  const selectedRows = useMemo(() => selectedCardKey ? signalRows.filter((row) => cardGroupKey(row) === selectedCardKey) : [], [selectedCardKey, signalRows])
   const summary = useMemo(() => summarize(signalRows), [signalRows])
   const dateRange = useMemo(() => getDateRange(dataset?.rows || []), [dataset])
-  const hasFilters = Boolean(query || intent !== "all" || quality !== "all" || since || until)
+  const hasFilters = Boolean(query || intent !== "all" || rarity !== "all" || quality !== "all" || since || until)
   const datasetOptions = useMemo<DatasetOption[]>(() => [
     ...SAMPLE_FILES.map((sample) => ({ ...sample, source: "sample" as const })),
     ...catalog.map((entry) => ({ file: `${MARKET_CATALOG_ID}/${entry.path}`, label: `공개 · ${entry.gameName} · ${entry.yearMonth} · ${entry.listingTypeLabel} · ${entry.rows.toLocaleString("ko-KR")}행`, source: "git" as const })),
@@ -144,6 +149,15 @@ export function MarketExplorer() {
     }
     return counts
   }, [dataset, selectedGameId])
+  const rarityOptions = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const row of dataset?.rows || []) {
+      if (row.galleryId !== selectedGameId) continue
+      const label = row.rarity || "미분류"
+      counts.set(label, (counts.get(label) || 0) + 1)
+    }
+    return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "ko-KR"))
+  }, [dataset, selectedGameId])
   const openFilePicker = () => fileInput.current?.click()
 
   const handleFiles = (files: FileList | null) => {
@@ -152,7 +166,7 @@ export function MarketExplorer() {
     setLoadError("")
     const reader = new FileReader()
     reader.onload = () => {
-      try { setDataset(parseMarketCsv(String(reader.result || ""), file.name)); setSelectedCardKey(null) } catch { setLoadError("CSV 형식을 읽지 못했습니다") }
+      try { setDataset(parseMarketCsv(String(reader.result || ""), file.name)); setRarity("all"); setSelectedCardKey(null) } catch { setLoadError("CSV 형식을 읽지 못했습니다") }
     }
     reader.onerror = () => setLoadError("파일을 읽지 못했습니다")
     reader.readAsText(file, "utf-8")
@@ -167,6 +181,7 @@ export function MarketExplorer() {
   const resetFilters = () => {
     setQuery("")
     setIntent("all")
+    setRarity("all")
     setQuality("all")
     setSince("")
     setUntil("")
@@ -234,6 +249,7 @@ export function MarketExplorer() {
             })}
           </div>
           <div className="sub-filter-row"><span className="sub-filter-label">거래 유형</span><div className="intent-tabs intent-tabs-prominent" role="group" aria-label="거래 유형 선택">{INTENT_FILTERS.map((value) => <button key={value} className={intent === value ? "active" : ""} type="button" aria-pressed={intent === value} onClick={() => { setIntent(value); setSelectedCardKey(null) }}><span>{intentLabel(value)}</span>{value !== "all" && <small>{activeIntentCounts.get(value) || 0}</small>}</button>)}</div></div>
+          <div className="rarity-filter-row"><span className="sub-filter-label">레어도</span><div className="rarity-chips" role="group" aria-label="레어도 선택"><button className={rarity === "all" ? "active" : ""} type="button" aria-pressed={rarity === "all"} onClick={() => { setRarity("all"); setSelectedCardKey(null) }}>전체</button>{rarityOptions.map(([value, count]) => <button key={value} className={rarity === value ? "active" : ""} type="button" aria-pressed={rarity === value} onClick={() => { setRarity(value); setSelectedCardKey(null) }}>{value}<small>{count.toLocaleString("ko-KR")}</small></button>)}</div></div>
         </section>
 
         <section className="filter-card" aria-label="시장 데이터 필터">
@@ -273,8 +289,10 @@ function Metric({ icon, label, value, detail, tone }: { icon: ReactNode; label: 
 }
 
 type CardGroup = {
+  groupKey: string
   cardKey: string
   name: string
+  rarity: string
   count: number
   supply: number
   demand: number
@@ -284,11 +302,12 @@ type CardGroup = {
   date: string
 }
 
-function CardTable({ rows, onSelect }: { rows: MarketRow[]; onSelect: (cardKey: string) => void }) {
+function CardTable({ rows, onSelect }: { rows: MarketRow[]; onSelect: (groupKey: string) => void }) {
   const groups = useMemo(() => {
     const grouped = new Map<string, CardGroup>()
     for (const row of rows) {
-      const current = grouped.get(row.cardKey) || { cardKey: row.cardKey, name: row.cardName, count: 0, supply: 0, demand: 0, unknown: 0, prices: [], sellers: new Set<string>(), date: "" }
+      const groupKey = cardGroupKey(row)
+      const current = grouped.get(groupKey) || { groupKey, cardKey: row.cardKey, name: row.cardName, rarity: row.rarity || "미분류", count: 0, supply: 0, demand: 0, unknown: 0, prices: [], sellers: new Set<string>(), date: "" }
       current.count += 1
       if (row.listingType === "sell") current.supply += 1
       else if (row.listingType === "buy") current.demand += 1
@@ -296,12 +315,14 @@ function CardTable({ rows, onSelect }: { rows: MarketRow[]; onSelect: (cardKey: 
       if (row.priceKrw != null && row.priceScope === "per_card") current.prices.push(row.priceKrw)
       if (row.sellerName) current.sellers.add(row.sellerName)
       if (row.dateKey > current.date) current.date = row.dateKey
-      grouped.set(row.cardKey, current)
+      grouped.set(groupKey, current)
     }
     return [...grouped.values()].sort((left, right) => (right.supply + right.demand) - (left.supply + left.demand) || right.count - left.count).slice(0, 12)
   }, [rows])
-  return <section className="table-card" id="signals"><div className="table-card-header"><div><span className="eyebrow">카드 신호</span><h2>카드별 시장 신호</h2></div><span className="table-count">{groups.length}개 카드 표시</span></div>{groups.length === 0 ? <div className="chart-empty">현재 조건에 맞는 카드가 없습니다.</div> : <div className="card-table-wrap"><table><thead><tr><th>카드</th><th>공급</th><th>수요</th><th className="mobile-table-hide">미분류</th><th>관측 중앙값</th><th className="mobile-table-hide">판매자</th><th className="mobile-table-hide">최근 등록</th></tr></thead><tbody>{groups.map((group) => <tr key={group.cardKey} className="card-table-row" tabIndex={0} role="button" aria-label={`${group.name} 상세 보기`} onClick={() => onSelect(group.cardKey)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(group.cardKey) } }}><td><strong>{group.name}</strong><small>{group.count}행 · 상세 보기</small></td><td><span className="table-number supply-text">{group.supply}</span></td><td><span className="table-number demand-text">{group.demand}</span></td><td className="mobile-table-hide"><span className="table-number unknown-text">{group.unknown || "—"}</span></td><td>{group.prices.length ? `${Math.round(median(group.prices)).toLocaleString("ko-KR")}원` : "—"}</td><td className="mobile-table-hide">{group.sellers.size}</td><td className="mobile-table-hide">{group.date ? group.date.replaceAll("-", ".") : "—"}</td></tr>)}</tbody></table></div>}<div className="table-card-footer"><span>분류된 거래량과 관측 수가 많은 카드 12개</span><span>{rows.length.toLocaleString("ko-KR")}개 관측</span></div></section>
+  return <section className="table-card" id="signals"><div className="table-card-header"><div><span className="eyebrow">카드 신호</span><h2>카드·레어도별 시장 신호</h2></div><span className="table-count">{groups.length}개 조합 표시</span></div>{groups.length === 0 ? <div className="chart-empty">현재 조건에 맞는 카드가 없습니다.</div> : <div className="card-table-wrap"><table><thead><tr><th>카드</th><th>레어도</th><th>공급</th><th>수요</th><th className="mobile-table-hide">미분류</th><th>관측 중앙값</th><th className="mobile-table-hide">판매자</th><th className="mobile-table-hide">최근 등록</th></tr></thead><tbody>{groups.map((group) => <tr key={group.groupKey} className="card-table-row" tabIndex={0} role="button" aria-label={`${group.name} ${group.rarity} 상세 보기`} onClick={() => onSelect(group.groupKey)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelect(group.groupKey) } }}><td><strong>{group.name}</strong><small>{group.count}행 · 상세 보기</small></td><td><span className="rarity-badge">{group.rarity}</span></td><td><span className="table-number supply-text">{group.supply}</span></td><td><span className="table-number demand-text">{group.demand}</span></td><td className="mobile-table-hide"><span className="table-number unknown-text">{group.unknown || "—"}</span></td><td>{group.prices.length ? `${Math.round(median(group.prices)).toLocaleString("ko-KR")}원` : "—"}</td><td className="mobile-table-hide">{group.sellers.size}</td><td className="mobile-table-hide">{group.date ? group.date.replaceAll("-", ".") : "—"}</td></tr>)}</tbody></table></div>}<div className="table-card-footer"><span>카드명과 레어도를 함께 묶은 시장 신호 12개</span><span>{rows.length.toLocaleString("ko-KR")}개 관측</span></div></section>
 }
+
+function cardGroupKey(row: MarketRow) { return `${row.cardKey}::${normalizeRarity(row.rarity || "미분류") || "미분류"}` }
 
 function CardDetailModal({ rows, onClose }: { rows: MarketRow[]; onClose: () => void }) {
   const closeButton = useRef<HTMLButtonElement>(null)
@@ -317,6 +338,7 @@ function CardDetailModal({ rows, onClose }: { rows: MarketRow[]; onClose: () => 
   }, [sortedRows])
   const pricedRows = useMemo(() => rows.filter((row) => row.priceKrw != null && row.priceScope === "per_card"), [rows])
   const cardName = rows[0]?.cardName || rows[0]?.cardKey || "선택한 카드"
+  const cardRarity = rows[0]?.rarity || "미분류"
   const prices = pricedRows.map((row) => row.priceKrw as number)
   const latestPrice = sortedRows.find((row) => row.priceKrw != null && row.priceScope === "per_card")?.priceKrw ?? null
   const sellers = new Set(rows.map((row) => row.sellerName).filter(Boolean)).size
@@ -344,7 +366,7 @@ function CardDetailModal({ rows, onClose }: { rows: MarketRow[]; onClose: () => 
       <header className="card-detail-header">
         <div>
           <span className="eyebrow">카드 상세</span>
-          <h2 id="card-detail-title">{cardName}</h2>
+          <div className="detail-title-row"><h2 id="card-detail-title">{cardName}</h2><span className="rarity-badge">{cardRarity}</span></div>
           <p>{rows[0]?.cardKey || "카드 키 없음"}</p>
         </div>
         <button ref={closeButton} className="modal-close-button" type="button" aria-label="카드 상세 닫기" onClick={onClose}><X size={18} /></button>

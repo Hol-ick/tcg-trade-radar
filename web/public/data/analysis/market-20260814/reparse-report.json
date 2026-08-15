@@ -1,17 +1,20 @@
 {
   "input_root": "web\\public\\data\\analysis\\market-20260814",
-  "output_root": ".audit\\reprocessed-market-20260815",
+  "output_root": ".audit\\reprocessed-market-20260815-rarity",
   "source_rows": 162257,
   "reparse": {
     "input": "web\\public\\data\\analysis\\market-20260814",
-    "output": ".audit\\reprocessed-market-20260815\\<temporary-reparsed-observations.csv>",
+    "output": ".audit\\reprocessed-market-20260815-rarity\\<temporary-reparsed-observations.csv>",
     "counts": {
       "rows": 162257,
-      "reparsed": 162257,
-      "changed": 50157,
-      "price_to_missing": 36860,
-      "quantity_recovered": 14100,
-      "unparsed": 31352
+      "output_rows": 163818,
+      "reparsed": 163818,
+      "changed": 33653,
+      "price_to_missing": 7,
+      "quantity_recovered": 507,
+      "unparsed": 31352,
+      "rarity_split_rows": 2295,
+      "rarity_split_groups": 734
     },
     "examples": [
       {
@@ -57,26 +60,26 @@
       {
         "post_url": "https://m.dcinside.com/board/digimontcg/458784",
         "raw_line": "loadScript('//t1.kakaocdn.net/kas/static/ba.min.js', true);",
-        "old_price_krw": "10000",
+        "old_price_krw": "",
         "new_price_krw": "",
         "new_quantity": "1",
-        "change": "price,unparsed"
+        "change": "unparsed"
       },
       {
         "post_url": "https://m.dcinside.com/board/digimontcg/458784",
         "raw_line": "loadScript('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle_direct.js?client=ca-pub-8171468792791627', true, 'anonymous');",
-        "old_price_krw": "20000",
+        "old_price_krw": "",
         "new_price_krw": "",
         "new_quantity": "1",
-        "change": "price,unparsed"
+        "change": "unparsed"
       },
       {
         "post_url": "https://m.dcinside.com/board/digimontcg/458784",
         "raw_line": "// ---- DOM 삽입 헬퍼 (현재 스크립트 위치 기준1)",
-        "old_price_krw": "10000",
+        "old_price_krw": "",
         "new_price_krw": "",
         "new_quantity": "1",
-        "change": "price,unparsed"
+        "change": "unparsed"
       },
       {
         "post_url": "https://m.dcinside.com/board/digimontcg/458811",
@@ -169,26 +172,26 @@
       {
         "post_url": "https://m.dcinside.com/board/digimontcg/459392",
         "raw_line": "loadScript('//t1.kakaocdn.net/kas/static/ba.min.js', true);",
-        "old_price_krw": "10000",
+        "old_price_krw": "",
         "new_price_krw": "",
         "new_quantity": "1",
-        "change": "price,unparsed"
+        "change": "unparsed"
       },
       {
         "post_url": "https://m.dcinside.com/board/digimontcg/459392",
         "raw_line": "// ---- DOM 삽입 헬퍼 (현재 스크립트 위치 기준1)",
-        "old_price_krw": "10000",
+        "old_price_krw": "",
         "new_price_krw": "",
         "new_quantity": "1",
-        "change": "price,unparsed"
+        "change": "unparsed"
       },
       {
         "post_url": "https://m.dcinside.com/board/digimontcg/459392",
         "raw_line": "loadScript('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle_direct.js?client=ca-pub-8171468792791627', true, 'anonymous');",
-        "old_price_krw": "20000",
+        "old_price_krw": "",
         "new_price_krw": "",
         "new_quantity": "1",
-        "change": "price,unparsed"
+        "change": "unparsed"
       },
       {
         "post_url": "https://m.dcinside.com/board/digimontcg/459525",
@@ -231,14 +234,6 @@
         "change": "unparsed"
       },
       {
-        "post_url": "https://m.dcinside.com/board/digimontcg/460149",
-        "raw_line": "글판 홍염 페레 0.9 금박 0.6에 구합니다",
-        "old_price_krw": "",
-        "new_price_krw": "6000",
-        "new_quantity": "1",
-        "change": "price,quantity"
-      },
-      {
         "post_url": "https://m.dcinside.com/board/digimontcg/460161",
         "raw_line": "(완료)ex9 파워드라몬 희소 구매합니다.",
         "old_price_krw": "",
@@ -252,22 +247,30 @@
         "old_price_krw": "",
         "new_price_krw": "",
         "new_quantity": "1",
+        "change": "unparsed"
+      },
+      {
+        "post_url": "https://m.dcinside.com/board/digimontcg/460590",
+        "raw_line": "바황파 희소,16탄 웃코 일반삽니다",
+        "old_price_krw": "",
+        "new_price_krw": "",
+        "new_quantity": "3",
         "change": "unparsed"
       }
     ]
   },
   "export": {
     "schema_version": 1,
-    "generated_at": "2026-08-15T16:22:07+09:00",
+    "generated_at": "2026-08-15T18:32:01+09:00",
     "source": {
-      "path": "C:/Users/hs190/AppData/Local/Temp/kaitori-reparse-rwu1aa6a/reparsed-observations.csv",
-      "rows": 162257,
+      "path": "web/public/data/analysis/market-20260814",
+      "rows": 163818,
       "min_posted_at": "2026-03-31T10:11:45+09:00",
       "max_posted_at": "2026-08-13T17:09:45+09:00"
     },
     "counts": {
-      "input_rows": 162257,
-      "partition_rows": 162257,
+      "input_rows": 163818,
+      "partition_rows": 163818,
       "partitions": 54,
       "games": 5,
       "months": 7,

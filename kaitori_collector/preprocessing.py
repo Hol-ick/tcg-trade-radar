@@ -10,7 +10,7 @@ from .contracts import AnalysisStatus, CardMatchStatus, PostStatus, PriceOrigin,
 
 COMPLETED_SIGNALS = (
     "거래완료", "판매완료", "구매완료", "거래 완료", "판매 완료", "구매 완료",
-    "팔렸", "팔림", "끝났", "마감", "거래 끝",
+    "판매완", "판완", "완판", "팔렸", "팔림", "끝났", "마감", "거래 끝",
 )
 RESERVED_SIGNALS = ("예약중", "예약 중", "예약", "찜", "홀딩")
 PRICE_REMOVED_SIGNALS = (

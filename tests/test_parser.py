@@ -15,6 +15,7 @@ from kaitori_collector.parser import (
     is_dcinside_public_url,
     mobile_url_for,
     parse_sale_line,
+    parse_sale_line_variants,
 )
 
 
@@ -427,6 +428,37 @@ class ParserTests(unittest.TestCase):
         self.assertIn("일괄·세트 가격", bundle["review_reason"])
         self.assertEqual(multiple["review_status"], "needs_review")
         self.assertIn("복수 카드 가격", multiple["review_reason"])
+
+    def test_rarity_price_tiers_are_split_into_one_row_per_rarity(self):
+        rows = parse_sale_line_variants("후와로스 슈레 0.3 컬레 0.5 시크 0.7", None, None)
+
+        self.assertEqual([(row["card_name"], row["rarity"], row["price_krw"]) for row in rows], [
+            ("후와로스", "슈레", 3000),
+            ("후와로스", "컬레", 5000),
+            ("후와로스", "시크", 7000),
+        ])
+        self.assertTrue(all("레어도별 가격 분리" in row["review_reason"] for row in rows))
+
+    def test_rarity_section_header_is_inherited_by_following_cards(self):
+        html = """
+        <html><body>
+          <span class="title_subject">판매 레어도별 목록</span>
+          <div class="write_div">
+            오버프싴<br>
+            커튼 18<br>
+            프싴<br>
+            스카레드 노바 드래곤 신일 7 판완
+          </div>
+        </body></html>
+        """
+
+        rows = extract_post(html, "https://example.test/post/rarity", "tcggame", "판매")
+
+        self.assertEqual([(row.card_name, row.rarity, row.price_krw) for row in rows], [
+            ("커튼", "오버프싴", 180000),
+            ("스카레드 노바 드래곤 신일", "프싴", 70000),
+        ])
+        self.assertEqual(rows[1].post_status, "completed")
 
     def test_extract_post_keeps_original_metadata_and_marks_image_only_post(self):
         html = """

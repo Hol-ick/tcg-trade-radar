@@ -34,6 +34,14 @@ const PRICE_NOISE = /(?<![A-Za-z가-힣0-9.-])\d[\d,]*(?:\.\d+)?\s*(?:원|만원
 const SHIPPING_NOISE = /(?:준등포|준등기|등포|등기|택포|택배포함|배송비\s*포함|직거래)/gi
 const ARTIFACT_CARD_TEXT = /(?:https?:\/\/|javascript\s*:|<\/?script\b|loadscript\b|adsbygoogle|googlesyndication|(?:window|document)\s*[.[]|queryselector\s*\(|appendchild\s*\(|\b(?:var|const|let)\s+\w+\s*=|function\s*\(|DOM\s*삽입|스크립트|광고\s*삽입)/i
 const NON_CARD_LABEL = /^(?:(?:\d+\s*)?(?:장|매|개|통)(?:분)?|한\s*장|(?:장|매|개|통)\s*당|준등포|준등기|등포|등기|택포|반택포|편택포|배송|배송비|가격|합계|총액|일괄\s*(?:시|판매|구매)?|구매|판매|교환|\d+(?:[.,]\d+)?(?:\s+\d+(?:[.,]\d+)?)+|(?:준등포|준등기|등포|등기|택포|배송|배송비|가격|합계|총액|일괄)\s*\d+(?:[.,]\d+)?\s*(?:원|만원|만|천)?)$/i
+const RARITY_ALIASES: Record<string, string> = {
+  오버프싴: "오버프싴", 오버프시크: "오버프싴", 오버울레: "오버울레", 오버울: "오버울",
+  프리시크: "프싴", 프시크: "프싴", 프싴: "프싴", 영싴: "영싴", 영시크: "영싴",
+  쿼싴: "쿼싴", 쿼시크: "쿼싴", 퍼홀: "퍼홀", 홀로: "홀로", 시크페레: "시크페레", 시크페러렐: "시크페레",
+  시크릿: "시크", 시크: "시크", 싴: "시크", 얼티미트: "얼티", 얼티: "얼티", 얼: "얼티",
+  울트라: "울레", 울레: "울레", 울: "울레", 슈퍼: "슈레", 슈레: "슈레", 슈: "슈레",
+  컬레: "컬레", 컬: "컬레", 레어: "레어", 노말: "노말", 노멀: "노말", 일반: "일반", 구일: "구일",
+}
 
 export function parseMarketCsv(text: string, name: string): MarketDataset {
   const records = parseCsvRecords(text)
@@ -96,6 +104,11 @@ export function normalizeCardName(value: string): string {
     .replace(/^[\s\-._~]+|[\s\-._~]+$/g, "")
 }
 
+export function normalizeRarity(value: string): string {
+  const compact = value.replace(/\s+/g, "").trim().replace(/^[\d.,]+/, "")
+  return RARITY_ALIASES[compact] || compact
+}
+
 function normalizeMarketRow(record: Record<string, string>, id: string): MarketRow | null {
   const title = first(record, "post_title", "title")
   const rawLine = first(record, "raw_line")
@@ -103,6 +116,7 @@ function normalizeMarketRow(record: Record<string, string>, id: string): MarketR
   const candidateCardName = sourceCardName || rawLine || title
   const normalizedCardName = normalizeCardName(candidateCardName)
   const cardName = normalizedCardName || (sourceCardName && !NON_CARD_LABEL.test(sourceCardName) ? sourceCardName : "이름 미확인")
+  const rarity = normalizeRarity(first(record, "rarity"))
   const canonicalCardKeySource = first(record, "card_key")
   const postedAt = first(record, "posted_at", "date", "created_at")
   const dateKey = postedAt.slice(0, 10)
@@ -121,6 +135,7 @@ function normalizeMarketRow(record: Record<string, string>, id: string): MarketR
     galleryId: first(record, "gallery_id", "game_id"),
     cardName: cardName || "이름 미확인",
     cardKey,
+    rarity,
     sellerName: first(record, "seller_name", "seller_display_name", "author_name") || "판매자 미상",
     listingType,
     priceKrw,

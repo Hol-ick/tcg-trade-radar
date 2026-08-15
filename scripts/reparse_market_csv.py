@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from kaitori_collector.normalization import normalize_listing_card_label
-from kaitori_collector.parser import parse_sale_line
+from kaitori_collector.parser import normalize_rarity, parse_sale_line, parse_sale_line_variants
 from kaitori_collector.preprocessing import analysis_status, append_quality_reason, classify_price, fallback_card_match
 
 
@@ -50,7 +50,7 @@ def _positive_price(value: Any) -> int | None:
     return number if number > 0 else None
 
 
-def _reparse_row(row: dict[str, str]) -> tuple[dict[str, str], str]:
+def _reparse_row(row: dict[str, str], parsed_override: dict[str, Any] | None = None) -> tuple[dict[str, str], str]:
     raw_line = str(row.get("raw_line") or "").strip()
     title = str(row.get("post_title") or "")
     post_status = str(row.get("post_status") or "active") or "active"
@@ -63,7 +63,7 @@ def _reparse_row(row: dict[str, str]) -> tuple[dict[str, str], str]:
     old_rarity = str(row.get("rarity") or "")
     preserve_old_label = False
     quantity_context = "일괄" in title or "덱소스" in title
-    parsed = parse_sale_line(
+    parsed = parsed_override if parsed_override is not None else parse_sale_line(
         raw_line,
         _shipping_value(str(row.get("shipping_included") or "")),
         _shipping_price(str(row.get("shipping_price_krw") or "")),
@@ -104,7 +104,7 @@ def _reparse_row(row: dict[str, str]) -> tuple[dict[str, str], str]:
                 raw_line,
             )
         )
-        if old_price is not None and price is not None and old_price != price and parser_is_multi_price and not parser_is_quantity_aware and not embedded_old_number:
+        if parsed_override is None and old_price is not None and price is not None and old_price != price and parser_is_multi_price and not parser_is_quantity_aware and not embedded_old_number:
             # A multi-card line has several legitimate price candidates. Keep
             # the previously selected amount unless the old candidate was
             # visibly embedded in a card code/name.
@@ -142,7 +142,7 @@ def _reparse_row(row: dict[str, str]) -> tuple[dict[str, str], str]:
         "card_key": str(row.get("card_code") or normalized_name),
         "card_name": normalized_name,
         "card_name_raw": card_name,
-        "rarity": rarity,
+        "rarity": normalize_rarity(rarity),
         "quantity": str(quantity),
         "raw_price": raw_price,
         "price_krw_observed": str(price) if price is not None else "",
@@ -177,7 +177,7 @@ def reparse_market_csv(input_csv: Path, output_csv: Path) -> dict[str, Any]:
     if not input_csv.is_file():
         raise FileNotFoundError(input_csv)
     output_csv.parent.mkdir(parents=True, exist_ok=True)
-    counts = {"rows": 0, "reparsed": 0, "changed": 0, "price_to_missing": 0, "quantity_recovered": 0, "unparsed": 0}
+    counts = {"rows": 0, "output_rows": 0, "reparsed": 0, "changed": 0, "price_to_missing": 0, "quantity_recovered": 0, "unparsed": 0, "rarity_split_rows": 0, "rarity_split_groups": 0}
     examples: list[dict[str, str]] = []
     with input_csv.open("r", encoding="utf-8-sig", newline="") as source_handle:
         reader = csv.DictReader(source_handle)
@@ -188,28 +188,45 @@ def reparse_market_csv(input_csv: Path, output_csv: Path) -> dict[str, Any]:
             writer.writeheader()
             for raw in reader:
                 counts["rows"] += 1
-                before_price = _positive_price(raw.get("price_krw_observed"))
-                before_quantity = str(raw.get("quantity") or "1")
-                row, change = _reparse_row({field: raw.get(field, "") or "" for field in reader.fieldnames})
-                counts["reparsed"] += 1
-                if change:
-                    counts["changed"] += 1
-                if before_price is not None and not _positive_price(row.get("price_krw_observed")):
-                    counts["price_to_missing"] += 1
-                if before_quantity != str(row.get("quantity") or "1"):
-                    counts["quantity_recovered"] += 1
-                if "unparsed" in change:
-                    counts["unparsed"] += 1
-                if change and len(examples) < 30:
-                    examples.append({
-                        "post_url": str(row.get("post_url") or ""),
-                        "raw_line": str(row.get("raw_line") or ""),
-                        "old_price_krw": str(raw.get("price_krw_observed") or ""),
-                        "new_price_krw": str(row.get("price_krw_observed") or ""),
-                        "new_quantity": str(row.get("quantity") or ""),
-                        "change": change,
-                    })
-                writer.writerow(row)
+                source_row = {field: raw.get(field, "") or "" for field in reader.fieldnames}
+                variants = parse_sale_line_variants(
+                    str(source_row.get("raw_line") or ""),
+                    _shipping_value(str(source_row.get("shipping_included") or "")),
+                    _shipping_price(str(source_row.get("shipping_price_krw") or "")),
+                    quantity_context="일괄" in str(source_row.get("post_title") or "") or "덱소스" in str(source_row.get("post_title") or ""),
+                ) if source_row.get("raw_line") else []
+                parsed_inputs = variants if len(variants) > 1 else [None]
+                if len(variants) > 1:
+                    counts["rarity_split_groups"] += 1
+                for variant_index, parsed_override in enumerate(parsed_inputs):
+                    before_price = _positive_price(raw.get("price_krw_observed"))
+                    before_quantity = str(raw.get("quantity") or "1")
+                    row, change = _reparse_row(dict(source_row), parsed_override=parsed_override)
+                    if parsed_override is not None:
+                        base_row_id = row.get("row_id") or row.get("source_id") or row.get("post_url") or f"row-{row_number}"
+                        row["row_id"] = f"{base_row_id}:rarity-{variant_index + 1}"
+                        change = ",".join(filter(None, [change, "rarity_split"]))
+                        counts["rarity_split_rows"] += 1
+                    counts["output_rows"] += 1
+                    counts["reparsed"] += 1
+                    if change:
+                        counts["changed"] += 1
+                    if before_price is not None and not _positive_price(row.get("price_krw_observed")):
+                        counts["price_to_missing"] += 1
+                    if before_quantity != str(row.get("quantity") or "1"):
+                        counts["quantity_recovered"] += 1
+                    if "unparsed" in change:
+                        counts["unparsed"] += 1
+                    if change and len(examples) < 30:
+                        examples.append({
+                            "post_url": str(row.get("post_url") or ""),
+                            "raw_line": str(row.get("raw_line") or ""),
+                            "old_price_krw": str(raw.get("price_krw_observed") or ""),
+                            "new_price_krw": str(row.get("price_krw_observed") or ""),
+                            "new_quantity": str(row.get("quantity") or ""),
+                            "change": change,
+                        })
+                    writer.writerow(row)
     return {"input": str(input_csv), "output": str(output_csv), "counts": counts, "examples": examples}
 
 

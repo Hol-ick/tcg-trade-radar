@@ -100,6 +100,43 @@ class ReparseMarketTests(unittest.TestCase):
             self.assertEqual(row["price_krw_observed"], "3000")
             self.assertEqual(row["raw_price"], "0.3")
 
+    def test_reparse_expands_rarity_price_tiers_and_keeps_source_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "input.csv"
+            output = Path(directory) / "output.csv"
+            with source.open("w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=FIELDS)
+                writer.writeheader()
+                writer.writerow({
+                    "post_url": "https://example.test/post/rarity",
+                    "post_title": "후와로스 레어도별 판매",
+                    "card_name_raw": "후와로스",
+                    "listing_type": "sell",
+                    "quantity": "1",
+                    "raw_price": "0.7",
+                    "price_krw_observed": "7000",
+                    "price_status": "estimated",
+                    "price_scope": "per_card",
+                    "price_origin": "text",
+                    "post_status": "active",
+                    "review_status": "needs_review",
+                    "raw_line": "후와로스 슈레 0.3 컬레 0.5 시크 0.7",
+                })
+
+            report = reparse_market_csv(source, output)
+
+            self.assertEqual(report["counts"]["rows"], 1)
+            self.assertEqual(report["counts"]["output_rows"], 3)
+            self.assertEqual(report["counts"]["rarity_split_groups"], 1)
+            with output.open("r", encoding="utf-8-sig", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual([(row["card_name_raw"], row["rarity"], row["price_krw_observed"]) for row in rows], [
+                ("후와로스", "슈레", "3000"),
+                ("후와로스", "컬레", "5000"),
+                ("후와로스", "시크", "7000"),
+            ])
+            self.assertEqual({row["raw_line"] for row in rows}, {"후와로스 슈레 0.3 컬레 0.5 시크 0.7"})
+
 
 if __name__ == "__main__":
     unittest.main()

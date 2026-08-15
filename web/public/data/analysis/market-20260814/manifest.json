@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-08-15T16:22:07+09:00",
+  "generated_at": "2026-08-15T18:32:01+09:00",
   "source": {
     "path": "web/public/data/analysis/market-20260814",
-    "rows": 162257,
+    "rows": 163818,
     "min_posted_at": "2026-03-31T10:11:45+09:00",
     "max_posted_at": "2026-08-13T17:09:45+09:00"
   },
   "counts": {
-    "input_rows": 162257,
-    "partition_rows": 162257,
+    "input_rows": 163818,
+    "partition_rows": 163818,
     "partitions": 54,
     "games": 5,
     "months": 7,

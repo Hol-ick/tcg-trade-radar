@@ -2,7 +2,7 @@
 
 전처리 관측행을 게임·월·거래유형별로 중복 없이 나눈 공개 분석 데이터입니다.
 
-- source rows: 162,257
+- source rows: 163,818
 - partitions: 54
 - source date range: 2026-03-31T10:11:45+09:00 ~ 2026-08-13T17:09:45+09:00
 - listing types: `sell` 판매, `buy` 구매, `trade` 교환, `unknown` 미분류
