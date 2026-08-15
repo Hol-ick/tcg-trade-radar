@@ -221,12 +221,12 @@ export function MarketExplorer() {
         {loadError && <div className="explorer-error" role="alert">{loadError}</div>}
 
         <section className="game-filter-card" aria-label="게임 및 거래 유형 선택">
-          <div className="game-filter-heading"><div><span className="eyebrow">게임 분류</span><h2>게임을 선택하세요</h2></div><span className="game-filter-status">{isGameLoading ? "데이터 불러오는 중" : `${activeGame.name} · ${activeGameEntries.length ? `${activeGameEntries.length}개 파일` : "샘플 데이터"}`}</span></div>
+          <div className="game-filter-heading"><div><span className="eyebrow">게임 분류</span><h2>게임을 선택하세요</h2></div><span className="game-filter-status">{isGameLoading ? "데이터 불러오는 중" : !catalog.length ? "카탈로그 준비 중" : `${activeGame.name} · ${activeGameEntries.length}개 파일`}</span></div>
           <div className="game-picker" role="group" aria-label="게임 선택">
             {GALLERY_PRESETS.map((game) => {
               const rowCount = availableGameRows.get(game.id) || 0
               const isActive = game.id === selectedGameId
-              const isDisabled = isGameLoading || (catalog.length > 0 && rowCount === 0)
+              const isDisabled = isGameLoading || !catalog.length || rowCount === 0
               return <button key={game.id} className={`game-picker-button ${isActive ? "active" : ""}`} type="button" aria-pressed={isActive} disabled={isDisabled} onClick={() => void loadCatalogGame(game.id)}>
                 <GameLogo game={game} />
                 <span><strong>{game.name}</strong><small>{rowCount ? `${rowCount.toLocaleString("ko-KR")}행` : "데이터 준비 중"}</small></span>
