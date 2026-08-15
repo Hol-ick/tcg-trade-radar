@@ -122,6 +122,19 @@ pnpm --config.minimum-release-age=0 --dir web dev --host 127.0.0.1 --port 5173
 
 가격이 이미지에만 있는 글은 자동 확정하지 않고 검토 대상으로 남기며, CAPTCHA나 차단 우회는 사용하지 않습니다.
 
+## 분할 시장 분석 CSV
+
+전처리된 시장 관측행은 [공개 데이터 카탈로그](web/public/data/analysis/market-20260814/)에서 게임·월·거래유형별 파티션으로 확인할 수 있습니다. 각 관측행은 `partitions/<game_id>/<year_month>/<listing_type>.csv` 한 곳에만 들어가며, `summary/`에는 게임별·월별·거래유형별 집계가 있습니다.
+
+```powershell
+python scripts/export_partitioned_market.py `
+  --input .audit\preprocessed-market-20260814\observations.csv `
+  --output-root web\public\data\analysis\market-20260814 `
+  --replace
+```
+
+`listing_type`은 `sell` 판매, `buy` 구매, `trade` 교환, `unknown` 미분류입니다. `manifest.json`과 `index/partitions.csv`를 먼저 읽으면 필요한 파일만 선택할 수 있습니다.
+
 ## 범위와 주의사항
 
 - 공개 게시글만 대상으로 합니다.

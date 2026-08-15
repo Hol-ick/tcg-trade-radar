@@ -11,6 +11,9 @@ data/
 !web/public/data/weeks/**
 !web/public/data/collections/
 !web/public/data/collections/**
+!web/public/data/analysis/
+!web/public/data/analysis/market-20260814/
+!web/public/data/analysis/market-20260814/**
 .audit/
 *.sqlite3
 *.sqlite3-shm
