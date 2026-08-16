@@ -7,7 +7,8 @@ import { datasetUrl, marketCatalogUrl, MARKET_CATALOG_ID, normalizeRarity, parse
 import { GALLERY_PRESETS, type MarketIntent, type MarketQuality, type MarketRow } from "@/lib/types"
 
 const SAMPLE_FILES = [
-  { file: "tcggame-sales-50-20260812.csv", label: "TCGgame · 거래 샘플" },
+  { file: "tcggame-preprocessed-20260816.csv", label: "TCGgame · 전처리 거래 샘플" },
+  { file: "tcggame-sales-50-20260812.csv", label: "TCGgame · 원본 거래 샘플" },
   { file: "tcggame-live-20260812.csv", label: "TCGgame · 실시간 1행" },
 ]
 
