@@ -37,6 +37,20 @@ debug\run-kaitori.bat
 
 설치가 이미 끝난 PC에서 `run-kaitori.bat`를 다시 실행하면 기존 `.venv`를 재사용합니다. 의존성이 빠졌으면 setup을 다시 호출해 보완합니다.
 
+## GitHub 릴리스 ZIP으로 받는 경우
+
+릴리스 페이지의 `tcg-trade-radar-windows-*.zip`은 Git을 설치하지 않은 새 Windows PC에서도 사용할 수 있는 로컬 수집기 패키지입니다. ZIP을 원하는 폴더에 압축 해제한 뒤, 압축 해제한 폴더를 기준으로 아래 순서대로 실행하세요.
+
+```text
+debug\setup-trade-radar.bat
+debug\checkhost.bat
+debug\run-kaitori.bat
+```
+
+첫 번째 실행은 Python 3.11 이상으로 `.venv`를 만들고 PySide6·Playwright를 설치합니다. 이어서 `checkhost.bat`로 설치 상태와 공개 갤러리 응답 상태를 확인한 다음, `run-kaitori.bat`로 데스크톱 수집기를 엽니다. 이미 설치가 끝난 PC에서는 마지막 파일만 실행하면 됩니다.
+
+릴리스 ZIP에는 기존 사용자의 SQLite·CSV·로그와 GitHub Pages용 대용량 분석 데이터가 들어 있지 않습니다. 수집 결과는 실행한 패키지 폴더의 `.audit`에 저장하고, 필요한 CSV만 사용자가 별도로 내보냅니다. 패키지에는 현재 휴대형 `Collector.exe`가 포함되어 있지 않으며, Python/PySide6 기반 소스와 Windows 보조 배치 파일을 제공합니다.
+
 ## 명령 프롬프트에서 실행하기
 
 배치 파일을 더블클릭하지 않고 결과를 확인하려면 저장소 루트에서 실행합니다.

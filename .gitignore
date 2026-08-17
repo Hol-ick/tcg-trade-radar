@@ -23,4 +23,5 @@ data/
 *.egg-info/
 .env
 artifacts/
+dist/
 .vite/
