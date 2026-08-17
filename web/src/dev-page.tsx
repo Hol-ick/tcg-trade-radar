@@ -48,13 +48,13 @@ export function CollectorGuide() {
 
         <section className="collector-alert" role="note">
           <span className="collector-alert-icon"><Terminal size={18} /></span>
-          <div><strong>현재 휴대형 Collector.exe는 배포되어 있지 않습니다.</strong><p>저장소의 실행 가능한 수집 경로는 <code>debug\run-kaitori.bat</code>로 시작하는 PySide6 데스크톱 앱입니다. 가상환경의 <code>kaitori-collector.exe</code>는 콘솔 진입점 shim이라 휴대용 앱으로 안내하지 않습니다.</p></div>
+          <div><strong>현재 휴대형 Collector.exe는 배포되어 있지 않습니다.</strong><p>Git에서 저장소를 받은 뒤 <code>debug\setup-trade-radar.bat</code>로 환경을 준비하고 <code>debug\checkhost.bat</code>로 점검한 다음, <code>debug\run-kaitori.bat</code>로 PySide6 데스크톱 앱을 실행합니다.</p></div>
         </section>
 
         <div className="collector-status-grid">
           <article className="collector-status-card">
             <span className="collector-card-icon violet"><MonitorDown size={18} /></span>
-            <div><span className="eyebrow">로컬 앱</span><h2>데스크톱 수집기</h2><p>게임·기간·게시글 수를 설정하고 원문, 댓글, 정규화된 관측행을 로컬 SQLite에 저장합니다.</p><a className="inline-link" href={RUNNER_URL} target="_blank" rel="noreferrer">실행 파일 보기 <ExternalLink size={13} /></a></div>
+            <div><span className="eyebrow">로컬 앱</span><h2>데스크톱 수집기</h2><p>게임·기간·게시글 수를 설정하고 원문, 댓글, 정규화된 관측행을 로컬 SQLite에 저장합니다.</p><a className="inline-link" href={RUNNER_URL} target="_blank" rel="noreferrer">실행 배치 보기 <ExternalLink size={13} /></a></div>
           </article>
           <article className="collector-status-card">
             <span className="collector-card-icon green"><CheckCircle2 size={18} /></span>
@@ -65,16 +65,15 @@ export function CollectorGuide() {
         <section className="collector-flow-card">
           <div className="section-heading"><div><span className="eyebrow">작업 흐름</span><h2>수집에서 분석까지</h2></div><span className="section-meta">한 번 수집하고, 필요한 파일만 조회</span></div>
           <div className="collector-steps">
-            <CollectorStep number="01" icon={<MonitorDown size={17} />} title="데스크톱 앱 실행" description="프로젝트 폴더에서 실행 배치 파일을 열고 PySide6 앱을 시작합니다." code="debug\\run-kaitori.bat" />
-            <CollectorStep number="02" icon={<Terminal size={17} />} title="수집·내보내기" description="게임과 기간을 설정해 수집하고, 앱에서 CSV를 내보냅니다. 원본과 검토행은 로컬 DB에 남습니다." />
-            <CollectorStep number="03" icon={<GitBranch size={17} />} title="CSV를 Git에 반영" description="전처리·분할 스크립트로 GitHub Pages의 공개 데이터 카탈로그를 갱신합니다." code="scripts\\export_partitioned_market.py" />
+            <CollectorStep number="01" icon={<MonitorDown size={17} />} title="환경 준비" description="새 PC에서는 저장소 위치를 자동으로 찾아 .venv와 PySide6·Playwright를 준비합니다." code="debug\\setup-trade-radar.bat" />
+            <CollectorStep number="02" icon={<Terminal size={17} />} title="상태 점검·수집" description="checkhost로 설치 상태와 공개 주소를 확인한 뒤 앱에서 게임·기간·글 수를 설정해 수집합니다." code="debug\\checkhost.bat" />
+            <CollectorStep number="03" icon={<GitBranch size={17} />} title="CSV 내보내기·반영" description="앱에서 CSV를 내보내고, 검토한 공개 데이터만 전처리·분할 스크립트로 GitHub Pages 카탈로그에 반영합니다." code="scripts\\export_partitioned_market.py" />
             <CollectorStep number="04" icon={<FileDown size={17} />} title="탐색기에서 선택" description="시장 탐색기의 데이터 원본 선택기에서 공개 CSV 파일을 골라 가격·수요·공급을 분석합니다." />
           </div>
         </section>
 
         <section className="collector-help-grid">
-          <article className="collector-help-card"><span className="eyebrow">빠른 시작</span><h2>Windows에서 시작</h2><pre><code>cd D:\\Files\\TASKS\\PROJECTS\\tcg_trade_radar
-debug\\run-kaitori.bat</code></pre><p>처음 실행하는 PC라면 먼저 <code>python -m pip install -e .</code>을 실행하고 Playwright 브라우저 의존성을 준비하세요.</p><a className="button button-secondary" href={DESKTOP_DOC_URL} target="_blank" rel="noreferrer">데스크톱 앱 문서 <ExternalLink size={14} /></a></article>
+          <article className="collector-help-card"><span className="eyebrow">빠른 시작</span><h2>Windows에서 시작</h2><pre><code>{["debug\\setup-trade-radar.bat", "debug\\checkhost.bat", "debug\\run-kaitori.bat"].join("\n")}</code></pre><p>배치 파일이 프로젝트 폴더를 자동으로 계산하므로 Git을 어느 경로에 받아도 됩니다.</p><a className="button button-secondary" href={DESKTOP_DOC_URL} target="_blank" rel="noreferrer">데스크톱 앱 문서 <ExternalLink size={14} /></a></article>
           <article className="collector-help-card"><span className="eyebrow">데이터 약속</span><h2>페이지가 읽는 데이터</h2><ul><li><strong>관측행 CSV</strong><span>카드명·판매자·거래유형·가격·수량·게시시각</span></li><li><strong>파일 인덱스</strong><span>게임·월·거래유형·행 수·기간</span></li><li><strong>중복 방지</strong><span>관측 ID를 기준으로 한 행만 유지</span></li></ul><a className="button button-secondary" href={CATALOG_URL} target="_blank" rel="noreferrer">공개 데이터 보기 <ExternalLink size={14} /></a></article>
         </section>
       </div>

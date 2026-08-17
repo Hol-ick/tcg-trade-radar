@@ -1,30 +1,30 @@
 # TCG Trade Radar
 
-## 권장 실행: 로컬 데스크톱 앱
+## 권장 실행: Windows 데스크톱 앱
 
 실제 수집은 웹 페이지가 아니라 로컬 PySide6 앱 안에서 직접 실행됩니다. 별도 워커 연결은 필요하지 않습니다.
 
+새로운 PC에서는 아래 파일을 순서대로 실행합니다.
+
 ```text
+debug\setup-trade-radar.bat
+debug\checkhost.bat
 debug\run-kaitori.bat
 ```
 
-수집·로그·SQLite 저장·CSV 내보내기는 모두 앱에 포함됩니다. 자세한 안내는 [데스크톱 앱 문서](docs/desktop-app.md)를 참고하세요.
+이미 설정된 PC에서는 [`debug/run-kaitori.bat`](debug/run-kaitori.bat)만 실행하면 됩니다. 설치·점검·문제 해결은 [Windows 새 환경 시작 안내](docs/windows-setup.md), 앱 기능은 [데스크톱 앱 문서](docs/desktop-app.md)를 참고하세요.
 
-## 실제 수집 웹 콘솔
+디시인사이드 TCG 갤러리의 유저 거래 글을 모아 카드 거래 동향을 살펴보는 도구입니다. 수집·로그·SQLite 저장·CSV 내보내기는 모두 로컬 앱에 포함됩니다.
 
-GitHub Pages의 `Collector` 탭은 로컬 수집기를 직접 실행하는 기능이 아니라 데스크톱 앱 실행과 CSV 반영을 안내하는 화면입니다. 브라우저 보안상 방문자의 PC에서 EXE나 로컬 워커를 자동으로 시작할 수 없습니다.
+현재 저장소에는 휴대형 `Collector.exe`가 없습니다. 가상환경의 `kaitori-collector.exe`는 Python 콘솔 진입점 shim이므로 배포용 EXE로 간주하지 않으며, 새 환경 준비는 Git에 포함된 배치 파일을 사용합니다.
 
-웹 화면의 `수집 시작` 버튼이 로컬 Python 워커의 `POST /jobs`를 호출합니다. 조회 기간은 기본 7일로 채워지며, 게임은 미리 등록된 5개 프리셋에서 고릅니다. 수집 중에는 단계별 로그와 결과를 화면에서 확인할 수 있습니다.
+## GitHub Pages 분석 화면
 
-디시인사이드 TCG 갤러리의 유저 거래 글을 모아 카드 거래 동향을 살펴보는 도구입니다.
-
-실제 수집에는 로컬 워커가 필요합니다. GitHub Pages는 정적 호스팅이므로 원본 게시판을 직접 수집하지 않습니다.
-
-현재 저장소에는 휴대형 `Collector.exe`가 없으며, 실제 데스크톱 실행 진입점은 [`debug/run-kaitori.bat`](debug/run-kaitori.bat)입니다. 가상환경의 `kaitori-collector.exe`는 Python 콘솔 스크립트 shim이므로 배포용 EXE로 간주하지 않습니다.
+GitHub Pages의 `Collector` 탭은 로컬 수집기를 직접 실행하는 기능이 아니라 데스크톱 앱 실행과 CSV 반영을 안내하는 화면입니다. 브라우저 보안상 방문자의 PC에서 `bat`, `exe`, 로컬 SQLite 또는 로컬 워커를 자동으로 시작할 수 없습니다.
 
 ## 실행
 
-먼저 터미널에서 워커를 실행합니다.
+웹 콘솔·API를 개발하거나 기존 계약을 점검할 때만 로컬 워커를 직접 실행합니다.
 
 ```powershell
 python -m kaitori_collector --serve --host 127.0.0.1 --port 8787 --db .audit\kaitori.sqlite3
@@ -37,9 +37,9 @@ pnpm --config.minimum-release-age=0 --dir web install
 pnpm --config.minimum-release-age=0 --dir web dev --host 127.0.0.1 --port 5173
 ```
 
-`http://127.0.0.1:5173`을 열고 게임·기간·최근 게시글 수를 설정한 뒤 `수집 시작`을 누릅니다. Windows에서 Python 데스크톱 앱을 사용하려면 [`debug/run-kaitori.bat`](debug/run-kaitori.bat)을 실행할 수도 있습니다.
+`http://127.0.0.1:5173`을 열면 정적 분석 화면을 확인할 수 있습니다. 실제 수집은 [`debug/run-kaitori.bat`](debug/run-kaitori.bat)을 사용하세요.
 
-처음 실행하는 환경은 프로젝트 폴더에서 `python -m pip install -e .`로 Playwright 의존성을 설치합니다. Chrome이 설치되어 있으면 자동 사용하며, 화면을 보면서 확인하려면 `TCG_TRADE_BROWSER_HEADLESS=0`을 설정합니다.
+처음 실행하는 환경의 의존성 설치는 `python -m pip install -e .` 대신 [`debug/setup-trade-radar.bat`](debug/setup-trade-radar.bat)를 권장합니다. Chrome이 설치되어 있으면 자동 사용하며, 화면을 보면서 확인하려면 `TCG_TRADE_BROWSER_HEADLESS=0`을 설정합니다.
 
 또는 프로젝트 폴더에서 다음 명령을 실행합니다.
 
