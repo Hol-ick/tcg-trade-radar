@@ -2,7 +2,7 @@
 
 이 문서는 GitHub 저장소를 처음 받은 사용자가 TCG Trade Radar 데스크톱 수집기를 실행하기 위한 안내입니다.
 
-현재 저장소에는 휴대형 `Collector.exe`가 포함되어 있지 않습니다. 수집기는 Python과 PySide6로 실행되며, `debug\*.bat` 파일이 설치·점검·실행을 연결합니다. GitHub Pages의 웹 화면은 로컬 PC의 배치 파일이나 EXE를 직접 실행할 수 없고, 공개 분석 CSV를 읽는 역할만 합니다.
+현재 저장소에는 휴대형 `Collector.exe`가 포함되어 있지 않습니다. 수집기는 Python과 PySide6로 실행되며, 프로젝트 루트의 `TCG Trade Radar.bat`가 첫 실행 설치·점검·실행을 한 번에 연결합니다. GitHub Pages의 웹 화면은 로컬 PC의 배치 파일이나 EXE를 직접 실행할 수 없고, 공개 분석 CSV를 읽는 역할만 합니다.
 
 ## 필요한 것
 
@@ -16,15 +16,13 @@ Python을 설치할 때는 설치 화면의 `Add python.exe to PATH`를 선택�
 
 ## 첫 실행: 가장 간단한 순서
 
-프로젝트 폴더에서 아래 순서로 배치 파일을 실행합니다.
+프로젝트 폴더에서 아래 파일 하나만 실행합니다.
 
 ```text
-debug\setup-trade-radar.bat
-debug\checkhost.bat
-debug\run-kaitori.bat
+TCG Trade Radar.bat
 ```
 
-첫 번째 파일은 다음 작업을 자동으로 처리합니다.
+첫 실행은 다음 작업을 자동으로 처리합니다.
 
 - 저장소 위치를 배치 파일 기준으로 계산하므로 프로젝트를 어느 드라이브에 두어도 됩니다.
 - `.venv` 가상환경을 생성합니다.
@@ -33,21 +31,19 @@ debug\run-kaitori.bat
 - Playwright Chromium 설치를 시도합니다.
 - 수집기 모듈을 컴파일해 설치 상태를 확인합니다.
 
-설치가 끝나면 `checkhost.bat`가 Python·가상환경·PySide6·Playwright·브라우저·공개 갤러리 응답을 점검합니다. 그 뒤 `run-kaitori.bat`를 실행하면 별도 워커 주소나 브라우저 연결 없이 데스크톱 앱 안에서 직접 수집합니다.
+설치가 끝나면 `checkhost.bat`가 Python·가상환경·PySide6·Playwright·브라우저 상태를 점검하고, 별도 워커 주소나 브라우저 연결 없이 데스크톱 앱을 엽니다. 성공하면 `.audit\first-run-complete.txt`가 만들어집니다.
 
-설치가 이미 끝난 PC에서 `run-kaitori.bat`를 다시 실행하면 기존 `.venv`를 재사용합니다. 의존성이 빠졌으면 setup을 다시 호출해 보완합니다.
+다음부터는 `TCG Trade Radar.bat`가 첫 실행 절차를 건너뛰고 기존 `.venv`를 재사용합니다. 의존성을 다시 확인해야 하면 `.audit\first-run-complete.txt`를 삭제한 뒤 같은 파일을 실행하세요.
 
 ## GitHub 릴리스 ZIP으로 받는 경우
 
-릴리스 페이지의 `tcg-trade-radar-windows-*.zip`은 Git을 설치하지 않은 새 Windows PC에서도 사용할 수 있는 로컬 수집기 패키지입니다. ZIP을 원하는 폴더에 압축 해제한 뒤, 압축 해제한 폴더를 기준으로 아래 순서대로 실행하세요.
+릴리스 페이지의 `tcg-trade-radar-windows-*.zip`은 Git을 설치하지 않은 새 Windows PC에서도 사용할 수 있는 로컬 수집기 패키지입니다. ZIP을 원하는 폴더에 압축 해제한 뒤, 압축 해제한 폴더의 아래 파일 하나만 실행하세요.
 
 ```text
-debug\setup-trade-radar.bat
-debug\checkhost.bat
-debug\run-kaitori.bat
+TCG Trade Radar.bat
 ```
 
-첫 번째 실행은 Python 3.11 이상으로 `.venv`를 만들고 PySide6·Playwright를 설치합니다. 이어서 `checkhost.bat`로 설치 상태와 공개 갤러리 응답 상태를 확인한 다음, `run-kaitori.bat`로 데스크톱 수집기를 엽니다. 이미 설치가 끝난 PC에서는 마지막 파일만 실행하면 됩니다.
+첫 실행은 Python 3.11 이상으로 `.venv`를 만들고 PySide6·Playwright를 설치한 뒤 데스크톱 수집기를 엽니다. 두 번째 실행부터는 설치 단계를 건너뛰고 앱만 엽니다.
 
 릴리스 ZIP에는 기존 사용자의 SQLite·CSV·로그와 GitHub Pages용 대용량 분석 데이터가 들어 있지 않습니다. 수집 결과는 실행한 패키지 폴더의 `.audit`에 저장하고, 필요한 CSV만 사용자가 별도로 내보냅니다. 패키지에는 현재 휴대형 `Collector.exe`가 포함되어 있지 않으며, Python/PySide6 기반 소스와 Windows 보조 배치 파일을 제공합니다.
 
@@ -56,9 +52,14 @@ debug\run-kaitori.bat
 배치 파일을 더블클릭하지 않고 결과를 확인하려면 저장소 루트에서 실행합니다.
 
 ```powershell
-debug\setup-trade-radar.bat
+TCG Trade Radar.bat
+```
+
+설치·점검을 수동으로 확인해야 할 때만 다음 내부 보조 파일을 사용합니다.
+
+```powershell
+debug\setup-trade-radar.bat --skip-browser
 debug\checkhost.bat --skip-network
-debug\run-kaitori.bat
 ```
 
 Playwright Chromium을 별도로 받지 않고 이미 설치된 Chrome·Edge fallback만 확인하려면 다음처럼 설치를 생략할 수 있습니다.
@@ -99,7 +100,7 @@ GitHub Pages는 정적 웹 호스팅이므로 다음 작업을 수행하지 않�
 - 원본 갤러리로 직접 수집 요청 전송
 - 로컬 앱의 수집 로그 조회
 
-실제 수집은 `run-kaitori.bat`로 로컬에서 수행합니다. 결과 CSV를 검토한 뒤 저장소의 공개 데이터 export 절차로 반영하면 GitHub Pages 시장 탐색기가 갱신된 CSV를 읽습니다.
+실제 수집은 루트의 `TCG Trade Radar.bat`로 로컬에서 수행합니다. 결과 CSV를 검토한 뒤 저장소의 공개 데이터 export 절차로 반영하면 GitHub Pages 시장 탐색기가 갱신된 CSV를 읽습니다.
 
 ## 문제 해결
 
@@ -121,7 +122,7 @@ Python 3.11 이상을 설치하고 PATH 추가를 선택한 뒤 명령 프롬프
 
 ### 앱 창이 바로 닫힘
 
-더블클릭 대신 명령 프롬프트에서 `debug\run-kaitori.bat`를 실행해 오류를 확인합니다. 먼저 `debug\checkhost.bat --skip-network`를 실행하면 의존성 누락을 빠르게 찾을 수 있습니다.
+더블클릭 대신 명령 프롬프트에서 `TCG Trade Radar.bat`를 실행해 오류를 확인합니다. 먼저 `debug\checkhost.bat --skip-network`를 실행하면 의존성 누락을 빠르게 찾을 수 있습니다.
 
 ## 관련 문서
 

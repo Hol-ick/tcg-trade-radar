@@ -15,10 +15,13 @@ class WindowsPackageTests(unittest.TestCase):
 
             with zipfile.ZipFile(archive) as package:
                 names = set(package.namelist())
+                self.assertIn("tcg-trade-radar-windows-test/TCG Trade Radar.bat", names)
                 self.assertIn("tcg-trade-radar-windows-test/debug/setup-trade-radar.bat", names)
-                self.assertIn("tcg-trade-radar-windows-test/debug/run-kaitori.bat", names)
+                self.assertIn("tcg-trade-radar-windows-test/debug/checkhost.bat", names)
+                self.assertIn("tcg-trade-radar-windows-test/debug/trade_radar_desktop.py", names)
                 self.assertIn("tcg-trade-radar-windows-test/kaitori_collector/service.py", names)
                 self.assertIn("tcg-trade-radar-windows-test/PACKAGE-README.txt", names)
+                self.assertNotIn("tcg-trade-radar-windows-test/debug/run-kaitori.bat", names)
                 self.assertFalse(any(".venv" in name or ".audit" in name for name in names))
                 self.assertIsNone(package.testzip())
 

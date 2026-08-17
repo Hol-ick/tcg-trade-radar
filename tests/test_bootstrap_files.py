@@ -21,22 +21,22 @@ class BootstrapFileTests(unittest.TestCase):
         self.assertNotIn("KAITORI_API_TOKEN=", text)
 
     def test_batch_files_use_windows_line_endings(self) -> None:
-        for relative in ("debug/setup-trade-radar.bat", "debug/checkhost.bat", "debug/run-kaitori.bat"):
+        for relative in ("TCG Trade Radar.bat", "debug/setup-trade-radar.bat", "debug/checkhost.bat"):
             raw = (ROOT / relative).read_bytes()
             self.assertIn(b"\r\n", raw, relative)
             self.assertNotIn(b"\n", raw.replace(b"\r\n", b""), relative)
 
         self.assertIn(".venv/", self.read(".gitignore"))
 
-    def test_checkhost_and_runner_prefer_virtual_environment(self) -> None:
-        checkhost = self.read("debug/checkhost.bat")
-        runner = self.read("debug/run-kaitori.bat")
-        self.assertIn(".venv\\Scripts\\python.exe", checkhost)
-        self.assertIn("checkhost.py", checkhost)
-        self.assertIn("call", runner.lower())
-        self.assertIn("setup-trade-radar.bat", runner)
-        self.assertIn(".venv\\Scripts\\python.exe", runner)
-        self.assertNotIn("python debug\\trade_radar_desktop.py", runner)
+    def test_root_launcher_runs_setup_only_once_and_prefers_virtual_environment(self) -> None:
+        launcher = self.read("TCG Trade Radar.bat")
+        self.assertIn(".venv\\Scripts\\python.exe", launcher)
+        self.assertIn("FIRST_RUN_MARKER", launcher)
+        self.assertIn('if exist "%FIRST_RUN_MARKER%" goto :launch', launcher)
+        self.assertIn('call "%ROOT%\\debug\\setup-trade-radar.bat" --no-pause', launcher)
+        self.assertIn('call "%ROOT%\\debug\\checkhost.bat" --skip-network', launcher)
+        self.assertIn("trade_radar_desktop.py", launcher)
+        self.assertNotIn("run-kaitori.bat", launcher)
 
     def test_guide_mentions_first_run_and_troubleshooting(self) -> None:
         guide = self.read("docs/windows-setup.md")

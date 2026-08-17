@@ -192,7 +192,7 @@ def render_report(report: dict[str, Any]) -> str:
             lines.append(f"- {_state_label(item['state']):8} {item['target']} · {suffix} · {item['elapsed_ms']}ms")
     lines.append("")
     if not environment["ready"]:
-        lines.append("결과: 설치가 더 필요합니다. debug\\setup-trade-radar.bat를 먼저 실행하세요.")
+        lines.append("결과: 설치가 더 필요합니다. 프로젝트 루트의 TCG Trade Radar.bat를 먼저 실행하세요.")
     elif report["network_checked"] and not report["network_ready"]:
         lines.append("결과: 로컬 실행 환경은 준비됐지만 공개 주소 점검에 실패했습니다. 로그의 상태를 확인하세요.")
     else:

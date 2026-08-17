@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowUpRight, CheckCircle2, Database, ExternalLink, FileDown, GitBranch, MonitorDown, Terminal } from "lucide-react"
 
 const REPOSITORY_URL = "https://github.com/Hol-ick/tcg-trade-radar"
-const RUNNER_URL = `${REPOSITORY_URL}/blob/main/debug/run-kaitori.bat`
+const RUNNER_URL = `${REPOSITORY_URL}/blob/main/TCG%20Trade%20Radar.bat`
 const DESKTOP_DOC_URL = `${REPOSITORY_URL}/blob/main/docs/desktop-app.md`
 const CATALOG_URL = `${REPOSITORY_URL}/tree/main/web/public/data/analysis/market-20260814`
 
@@ -48,7 +48,7 @@ export function CollectorGuide() {
 
         <section className="collector-alert" role="note">
           <span className="collector-alert-icon"><Terminal size={18} /></span>
-          <div><strong>현재 휴대형 Collector.exe는 배포되어 있지 않습니다.</strong><p>Git에서 저장소를 받은 뒤 <code>debug\setup-trade-radar.bat</code>로 환경을 준비하고 <code>debug\checkhost.bat</code>로 점검한 다음, <code>debug\run-kaitori.bat</code>로 PySide6 데스크톱 앱을 실행합니다.</p></div>
+          <div><strong>실제 수집은 로컬 앱에서 실행합니다.</strong><p>저장소 루트의 <code>TCG Trade Radar.bat</code> 하나만 실행하면 됩니다. 첫 실행일 때만 환경 준비와 점검을 진행하고, 이후에는 PySide6 데스크톱 앱을 바로 엽니다.</p></div>
         </section>
 
         <div className="collector-status-grid">
@@ -65,15 +65,15 @@ export function CollectorGuide() {
         <section className="collector-flow-card">
           <div className="section-heading"><div><span className="eyebrow">작업 흐름</span><h2>수집에서 분석까지</h2></div><span className="section-meta">한 번 수집하고, 필요한 파일만 조회</span></div>
           <div className="collector-steps">
-            <CollectorStep number="01" icon={<MonitorDown size={17} />} title="환경 준비" description="새 PC에서는 저장소 위치를 자동으로 찾아 .venv와 PySide6·Playwright를 준비합니다." code="debug\\setup-trade-radar.bat" />
-            <CollectorStep number="02" icon={<Terminal size={17} />} title="상태 점검·수집" description="checkhost로 설치 상태와 공개 주소를 확인한 뒤 앱에서 게임·기간·글 수를 설정해 수집합니다." code="debug\\checkhost.bat" />
+            <CollectorStep number="01" icon={<MonitorDown size={17} />} title="첫 실행 준비" description="루트 실행기가 저장소 위치를 자동으로 찾아 .venv와 PySide6·Playwright를 준비하고 상태를 점검합니다." code="TCG Trade Radar.bat" />
+            <CollectorStep number="02" icon={<Terminal size={17} />} title="수집 실행" description="앱에서 게임·기간·글 수를 설정해 수집합니다. 다음 실행부터는 이 단계로 바로 들어갑니다." code="TCG Trade Radar.bat" />
             <CollectorStep number="03" icon={<GitBranch size={17} />} title="CSV 내보내기·반영" description="앱에서 CSV를 내보내고, 검토한 공개 데이터만 전처리·분할 스크립트로 GitHub Pages 카탈로그에 반영합니다." code="scripts\\export_partitioned_market.py" />
             <CollectorStep number="04" icon={<FileDown size={17} />} title="탐색기에서 선택" description="시장 탐색기의 데이터 원본 선택기에서 공개 CSV 파일을 골라 가격·수요·공급을 분석합니다." />
           </div>
         </section>
 
         <section className="collector-help-grid">
-          <article className="collector-help-card"><span className="eyebrow">빠른 시작</span><h2>Windows에서 시작</h2><pre><code>{["debug\\setup-trade-radar.bat", "debug\\checkhost.bat", "debug\\run-kaitori.bat"].join("\n")}</code></pre><p>배치 파일이 프로젝트 폴더를 자동으로 계산하므로 Git을 어느 경로에 받아도 됩니다.</p><a className="button button-secondary" href={DESKTOP_DOC_URL} target="_blank" rel="noreferrer">데스크톱 앱 문서 <ExternalLink size={14} /></a></article>
+          <article className="collector-help-card"><span className="eyebrow">빠른 시작</span><h2>Windows에서 시작</h2><pre><code>TCG Trade Radar.bat</code></pre><p>첫 실행만 설치·점검을 수행하고, 이후에는 이 파일 하나로 앱을 엽니다.</p><a className="button button-secondary" href={DESKTOP_DOC_URL} target="_blank" rel="noreferrer">데스크톱 앱 문서 <ExternalLink size={14} /></a></article>
           <article className="collector-help-card"><span className="eyebrow">데이터 약속</span><h2>페이지가 읽는 데이터</h2><ul><li><strong>관측행 CSV</strong><span>카드명·판매자·거래유형·가격·수량·게시시각</span></li><li><strong>파일 인덱스</strong><span>게임·월·거래유형·행 수·기간</span></li><li><strong>중복 방지</strong><span>관측 ID를 기준으로 한 행만 유지</span></li></ul><a className="button button-secondary" href={CATALOG_URL} target="_blank" rel="noreferrer">공개 데이터 보기 <ExternalLink size={14} /></a></article>
         </section>
       </div>

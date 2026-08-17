@@ -4,15 +4,13 @@
 
 실제 수집은 웹 페이지가 아니라 로컬 PySide6 앱 안에서 직접 실행됩니다. 별도 워커 연결은 필요하지 않습니다.
 
-새로운 PC에서는 아래 파일을 순서대로 실행합니다.
+새로운 PC에서도 이미 설정된 PC에서도 아래 파일 하나만 실행합니다.
 
 ```text
-debug\setup-trade-radar.bat
-debug\checkhost.bat
-debug\run-kaitori.bat
+TCG Trade Radar.bat
 ```
 
-이미 설정된 PC에서는 [`debug/run-kaitori.bat`](debug/run-kaitori.bat)만 실행하면 됩니다. 설치·점검·문제 해결은 [Windows 새 환경 시작 안내](docs/windows-setup.md), 앱 기능은 [데스크톱 앱 문서](docs/desktop-app.md)를 참고하세요.
+첫 실행일 때만 Python 환경·브라우저·필수 패키지를 준비하고 설치 상태를 점검합니다. 이후에는 같은 파일이 데스크톱 수집기를 바로 실행합니다. 설치·점검·문제 해결은 [Windows 새 환경 시작 안내](docs/windows-setup.md), 앱 기능은 [데스크톱 앱 문서](docs/desktop-app.md)를 참고하세요.
 
 디시인사이드 TCG 갤러리의 유저 거래 글을 모아 카드 거래 동향을 살펴보는 도구입니다. 수집·로그·SQLite 저장·CSV 내보내기는 모두 로컬 앱에 포함됩니다.
 
@@ -37,14 +35,14 @@ pnpm --config.minimum-release-age=0 --dir web install
 pnpm --config.minimum-release-age=0 --dir web dev --host 127.0.0.1 --port 5173
 ```
 
-`http://127.0.0.1:5173`을 열면 정적 분석 화면을 확인할 수 있습니다. 실제 수집은 [`debug/run-kaitori.bat`](debug/run-kaitori.bat)을 사용하세요.
+`http://127.0.0.1:5173`을 열면 정적 분석 화면을 확인할 수 있습니다. 실제 수집은 프로젝트 루트의 `TCG Trade Radar.bat`을 사용하세요.
 
 처음 실행하는 환경의 의존성 설치는 `python -m pip install -e .` 대신 [`debug/setup-trade-radar.bat`](debug/setup-trade-radar.bat)를 권장합니다. Chrome이 설치되어 있으면 자동 사용하며, 화면을 보면서 확인하려면 `TCG_TRADE_BROWSER_HEADLESS=0`을 설정합니다.
 
-또는 프로젝트 폴더에서 다음 배치 파일을 실행합니다.
+또는 프로젝트 폴더에서 다음 파일을 실행합니다.
 
 ```text
-debug\run-kaitori.bat
+TCG Trade Radar.bat
 ```
 
 데스크톱 앱은 수집 전용으로 단순화되어 있습니다. 게임을 고르고 기간 프리셋 또는 직접 날짜를 선택한 뒤, 슬라이더로 최근 글 수를 조절해 수집을 시작합니다.
@@ -64,20 +62,6 @@ debug\run-kaitori.bat
 - 수집 과정 상세 로그와 실패 원인 표시
 - 수집 결과 검토 및 CSV 내보내기
 - SQLite 기반 원문·추출 행·검토 이력 보존
-
-## 일주일치 일괄 수집
-
-UI를 거치지 않고 5개 게임의 판매·구매·교환 글을 순서대로 수집하려면 다음을 실행합니다.
-
-```powershell
-python debug/run_week_collection.py
-```
-
-실패한 게임부터 다시 시도하려면 시작 인덱스를 지정할 수 있습니다.
-
-```powershell
-python debug/run_week_collection.py --start-index 3
-```
 
 ## 갤러리 응답 사전 점검
 
@@ -146,7 +130,8 @@ python scripts/export_partitioned_market.py `
 ## 프로젝트 구조
 
 ```text
-debug/              실시간 수집 화면과 일괄 수집 실행 파일
+TCG Trade Radar.bat 루트 실행 진입점
+debug/              설치·점검 보조 파일과 수집 화면
 kaitori_collector/  수집·파싱·저장·검토 핵심 코드
 tests/              단위 테스트
 docs/               API 계약 및 확장 기획

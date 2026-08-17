@@ -2,24 +2,17 @@
 
 실제 수집은 이 앱 내부에서 직접 실행됩니다. 별도의 워커 주소, 브라우저 프록시, GitHub Pages 연결은 필요하지 않습니다.
 
-현재 저장소에는 휴대형 `Collector.exe`가 포함되어 있지 않습니다. `debug\run-kaitori.bat`가 프로젝트 가상환경의 PySide6 데스크톱 앱을 실행하며, GitHub Pages의 Collector 탭은 이 로컬 실행 절차와 CSV 반영 흐름을 안내합니다.
+현재 저장소에는 휴대형 `Collector.exe`가 포함되어 있지 않습니다. 프로젝트 루트의 `TCG Trade Radar.bat`가 첫 실행 설치·점검과 프로젝트 가상환경의 PySide6 데스크톱 앱 실행을 맡으며, GitHub Pages의 Collector 탭은 이 로컬 실행 절차와 CSV 반영 흐름을 안내합니다.
 
 ## 실행
 
-새 PC에서는 먼저 설치·점검 배치 파일을 실행합니다.
+새 PC든 이미 설정된 PC든 프로젝트 루트의 아래 파일 하나만 실행합니다.
 
 ```text
-debug\setup-trade-radar.bat
-debug\checkhost.bat
+TCG Trade Radar.bat
 ```
 
-그 다음 프로젝트 폴더에서 앱 실행 파일을 엽니다.
-
-```text
-debug\run-kaitori.bat
-```
-
-`setup-trade-radar.bat`가 Python 3.11 이상을 확인하고 `.venv`에 의존성을 설치합니다. 수동 설치가 필요한 경우에만 다음 명령을 사용합니다.
+첫 실행일 때만 `setup-trade-radar.bat`가 Python 3.11 이상을 확인하고 `.venv`에 의존성을 설치한 뒤 `checkhost.bat`로 상태를 점검합니다. 성공하면 `.audit\first-run-complete.txt`를 남기고 앱을 엽니다. 다음부터는 같은 루트 파일이 설치 단계를 건너뛰고 앱만 실행합니다. 수동 설치가 필요한 경우에만 다음 명령을 사용합니다.
 
 ```powershell
 python -m pip install -e .

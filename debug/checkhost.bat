@@ -13,7 +13,7 @@ where "%CHECK_PY%" >nul 2>&1
 if not exist "%ROOT%\.venv\Scripts\python.exe" (
     where python >nul 2>&1
     if errorlevel 1 (
-        echo Python을 찾지 못했습니다. debug\setup-trade-radar.bat를 실행하세요.
+        echo Python을 찾지 못했습니다. 프로젝트 루트의 TCG Trade Radar.bat를 먼저 실행하세요.
         goto :fail
     )
 )
@@ -23,7 +23,7 @@ set "CHECK_EXIT=%ERRORLEVEL%"
 if not "%CHECK_EXIT%"=="0" (
     echo.
     echo 점검 결과 코드: %CHECK_EXIT%
-    echo 설치 문제는 setup-trade-radar.bat, 공개 주소 문제는 위 상태와 수집 로그를 확인하세요.
+    echo 설치 문제는 프로젝트 루트의 TCG Trade Radar.bat를 다시 실행하고, 공개 주소 문제는 위 상태와 수집 로그를 확인하세요.
     pause
 )
 exit /b %CHECK_EXIT%

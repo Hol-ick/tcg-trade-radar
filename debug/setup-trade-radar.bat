@@ -90,7 +90,7 @@ echo [5/5] Python 모듈 컴파일을 확인합니다.
 if errorlevel 1 goto :fail
 
 echo.
-echo 설정 완료. debug\run-kaitori.bat를 실행하면 데스크톱 앱이 열립니다.
+echo 설정 완료. 프로젝트 루트의 TCG Trade Radar.bat를 실행하면 데스크톱 앱이 열립니다.
 if "%NO_PAUSE%"=="0" pause
 exit /b 0
 

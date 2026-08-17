@@ -13,16 +13,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXED_ZIP_TIME = (2026, 1, 1, 0, 0, 0)
-ROOT_FILES = (".env.example", ".gitattributes", "README.md", "pyproject.toml")
+ROOT_FILES = (".env.example", ".gitattributes", "README.md", "pyproject.toml", "TCG Trade Radar.bat")
 DIRECTORIES = ("kaitori_collector", "migrations")
 DEBUG_FILES = (
     "checkhost.bat",
     "checkhost.py",
-    "probe_galleries.py",
-    "run-kaitori.bat",
-    "run-probe.bat",
-    "run_week_collection.py",
-    "run_yugioh_sample.py",
     "setup-trade-radar.bat",
     "trade_radar_desktop.py",
 )
@@ -81,13 +76,14 @@ def package_readme(version: str, commit: str) -> str:
 소스 커밋: {commit}
 
 1. 이 폴더를 원하는 위치에 압축 해제합니다.
-2. debug\\setup-trade-radar.bat 를 한 번 실행합니다.
-3. debug\\checkhost.bat 를 실행해 설치 상태를 확인합니다.
-4. debug\\run-kaitori.bat 를 실행해 수집기를 엽니다.
+2. `TCG Trade Radar.bat`를 한 번 실행합니다.
+3. 첫 실행이 끝나면 다음부터도 `TCG Trade Radar.bat`만 실행합니다.
 
 이 패키지는 Python/PySide6 기반의 로컬 수집기 소스 패키지입니다.
 휴대형 Collector.exe, 기존 수집 데이터, 가상환경, Git 기록은 포함하지 않습니다.
 실행 중 .venv 및 .audit 폴더가 패키지 루트에 만들어집니다.
+
+설치·환경 점검 파일은 debug 폴더 안에 있지만, 일반 사용자는 직접 열 필요가 없습니다.
 
 자세한 설명은 docs\\windows-setup.md 를 확인하세요.
 """
