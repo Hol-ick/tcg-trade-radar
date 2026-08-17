@@ -24,32 +24,22 @@ def test_collection_request_uses_selected_preset_and_bounds_post_limit():
     assert request.subjects == ("판매", "구매", "거래", "판매/거래")
 
 
-def test_market_and_seller_rows_are_display_ready_without_qt_widgets():
-    market = DESKTOP.market_display_row({
-        "card_name_raw": "블루아이즈", "card_name_normalized": "Blue-Eyes", "gallery_id": "tcggame",
-        "sell_count": 3, "buy_count": 2, "recent_buy_count": 1, "sell_price_median": 35000,
-        "wanted_price_median": 31000, "demand_score": 2.5, "demand_status": "hot_demand", "quality_status": "observed",
-    })
-    seller = DESKTOP.seller_display_row({
-        "display_name": "카드상인", "author_type": "registered", "observed_post_count": 4,
-        "sell_post_count": 3, "buy_post_count": 1, "repost_count": 1, "risk_level": "medium",
-        "risk_score": 35, "open_signal_count": 2, "review_status": "watching",
-    })
-
-    assert market[0] == "Blue-Eyes"
-    assert market[5] == "35,000원"
-    assert market[8] == "구매 수요 높음"
-    assert seller[0] == "카드상인"
-    assert seller[4] == "주의 35"
-    assert seller[5] == "신호 2 · 관찰 중"
-
-
-def test_desktop_window_has_local_collection_and_explorer_pages(tmp_path):
+def test_desktop_window_is_collection_only_and_has_easy_range_controls(tmp_path):
     app = QApplication.instance() or QApplication([])
     window = DESKTOP.TradeRadarDesktop(tmp_path / "desktop.sqlite3")
 
-    assert window.windowTitle() == "TCG Trade Radar"
-    assert window.pages.count() == 6
+    assert window.windowTitle() == "TCG Trade Radar · 실시간 수집"
+    assert not hasattr(window, "pages")
+    assert window.collect_posts.value() == 50
+    assert window.collect_posts_slider.value() == 50
+    assert any(button.isChecked() and button.days == 7 for button in window.range_group.buttons())
     assert "워커" not in window.collect_status.text()
+    assert not window.export_button.isEnabled()
+
+    window._set_range_days(30)
+    assert window.collect_start.date().daysTo(window.collect_end.date()) + 1 == 30
+    window.collect_posts.setValue(100)
+    assert window.collect_posts_slider.value() == 100
+    window._focus_custom_dates()
 
     window.close()
