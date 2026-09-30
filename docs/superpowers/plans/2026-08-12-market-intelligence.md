@@ -104,7 +104,7 @@
 **파일:**
 - 수정: `README.md`
 - 수정: `docs/api-contract.md`
-- 수정: AIHub `PROJECT_STATUS.md`, `worklogs/2026-08-12.md`
+- 수정: Maru `PROJECT_STATUS.md`, `worklogs/2026-08-12.md`
 
 **구현:**
 

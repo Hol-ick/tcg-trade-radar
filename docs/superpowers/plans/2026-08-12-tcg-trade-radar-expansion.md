@@ -40,8 +40,8 @@
 
 ### 작업 4: 검증과 인수인계
 
-**파일:** `README.md`, `docs/api-contract.md`, AIHub linked worklog
+**파일:** `README.md`, `docs/api-contract.md`, Maru linked worklog
 
 - [ ] 전체 unittest, compileall, API smoke 테스트를 실행한다.
 - [ ] fixture로 판매·구매·교환 혼합글, 가격 없는 구매글, 중복 수집을 검증한다.
-- [ ] GitHub `main`에 확인된 변경만 커밋·푸시하고 AIHub worklog에 결과·검증·남은 작업을 기록한다.
+- [ ] GitHub `main`에 확인된 변경만 커밋·푸시하고 Maru worklog에 결과·검증·남은 작업을 기록한다.

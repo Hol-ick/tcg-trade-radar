@@ -60,10 +60,10 @@
 **Files:**
 - Create: `data/tcggame-live-20260812.csv` (generated evidence artifact, ignored by Git)
 - Modify: `README.md` with the verified worker + CSV command
-- Modify: AI_HUB `01_Projects/TCG_Trade_Radar/PROJECT_STATUS.md` and a worklog entry
+- Modify: MARU `01_Projects/TCG_Trade_Radar/PROJECT_STATUS.md` and a worklog entry
 
 - [ ] Start the worker with a fresh audit database and run a bounded `tcggame` job through the Dev page.
 - [ ] Confirm the job completes, the logs show a valid list response and post parsing, and the result count is greater than zero.
 - [ ] Export the same job to CSV and verify UTF-8 CSV headers, row count, and no raw HTML column.
 - [ ] Run the full Python tests, compile check, web lint, web build, and `git diff --check`.
-- [ ] Record exact evidence and unresolved source limitations in AI_HUB, then commit and push verified source changes and the plan/docs only; keep generated SQLite/CSV artifacts ignored unless explicitly requested for versioning.
+- [ ] Record exact evidence and unresolved source limitations in MARU, then commit and push verified source changes and the plan/docs only; keep generated SQLite/CSV artifacts ignored unless explicitly requested for versioning.

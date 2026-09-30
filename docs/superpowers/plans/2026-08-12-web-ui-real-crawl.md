@@ -91,11 +91,11 @@
 - [ ] Run a real public-read `tcggame` sample with a small limit and capture the exact final state: completed rows, or a structured transport/block/empty result.
 - [ ] Run the existing 49 Python tests and the web production build after UI changes.
 - [ ] Update README with exact local startup commands and the evidence boundary for live crawling.
-- [ ] Record the result in AI_HUB with changed paths, commit, verification commands, and unresolved source limitations.
+- [ ] Record the result in MARU with changed paths, commit, verification commands, and unresolved source limitations.
 
 ### Task 5: Review and deliver
 
 - [ ] Run `git diff --check` and inspect only session-owned paths.
 - [ ] Capture a local screenshot or Playwright DOM evidence for the main flow.
 - [ ] Commit and push verified project files to `origin/main` under the standing repository policy.
-- [ ] Render and index the AI_HUB journal, then report the live crawl result separately from UI/build verification.
+- [ ] Render and index the MARU journal, then report the live crawl result separately from UI/build verification.
