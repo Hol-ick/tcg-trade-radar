@@ -1,4 +1,5 @@
 import tempfile
+from contextlib import closing
 import unittest
 from pathlib import Path
 
@@ -31,8 +32,7 @@ def row(url: str, name: str, intent: str, price: int, posted: str) -> ExtractedR
 
 class MarketTests(unittest.TestCase):
     def test_card_summary_connects_supply_and_demand(self):
-        with tempfile.TemporaryDirectory() as directory:
-            repo = Repository(Path(directory) / "market.sqlite3")
+        with tempfile.TemporaryDirectory() as directory, closing(Repository(Path(directory) / "market.sqlite3")) as repo:
             job_id = repo.create_job(JobRequest(gallery_id="tcggame"))
             for index, (intent, price) in enumerate((("sell", 30000), ("sell", 35000), ("buy", 32000))):
                 source_id, _ = repo.upsert_source({
@@ -45,7 +45,7 @@ class MarketTests(unittest.TestCase):
                 repo.attach_source_to_job(job_id, source_id)
                 self.assertEqual(repo.insert_rows(job_id, source_id, [row(f"https://example.test/post/{index}", "블루아이즈", intent, price, f"2026-08-{10 + index:02d}T10:00:00+09:00")]), 1)
 
-            summaries = repo.summarize_cards(game_id="tcggame")
+            summaries = repo.summarize_cards(game_id="tcggame", until="2026-08-12")
 
             self.assertEqual(len(summaries), 1)
             self.assertEqual(summaries[0]["sell_count"], 2)
@@ -56,7 +56,6 @@ class MarketTests(unittest.TestCase):
             self.assertEqual(summaries[0]["demand_status"], "balanced")
             self.assertEqual(len(repo.list_card_listings(summaries[0]["card_key"], game_id="tcggame")), 3)
             self.assertIn("구매글 1건", summaries[0]["evidence"])
-            repo.close()
 
     def test_buy_listing_without_price_is_kept_in_demand_count(self):
         with tempfile.TemporaryDirectory() as directory:
